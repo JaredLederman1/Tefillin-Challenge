@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, Image, Platform, useWindowDimensions, KeyboardAvoidingView, Switch, AppState, Animated, Easing, AccessibilityInfo } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, Image, Platform, useWindowDimensions, KeyboardAvoidingView, Switch, AppState, Linking, Animated, Easing, AccessibilityInfo } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
@@ -9,7 +9,7 @@ import Svg, { Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { testContribution } from './src/payments';
+import { subscribeContribution, billingAction, paymentsLive } from './src/payments';
 import { supabase, uploadCheckin } from './src/supabase';
 import { dateKey, isShabbat, monthDays, money, parseContribution, streak } from './src/challenge';
 
@@ -74,6 +74,10 @@ function AppContent() {
   const [sheet, setSheet] = useState<'photo' | 'contribution' | 'transfer' | 'auth' | 'rules' | null>(null);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
+  const [recurringConsent, setRecurringConsent] = useState(false);
+  const [membership, setMembership] = useState<any>(null);
+  const [enrolledMonths, setEnrolledMonths] = useState<string[]>([]);
+  const [recipients, setRecipients] = useState<{id:string;name:string}[]>([]);
   const [photo, setPhoto] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
   const [sharePhoto, setSharePhoto] = useState(true);
@@ -89,7 +93,7 @@ function AppContent() {
   const isDemo = !user;
   const checks = isDemo ? demo.checks : liveChecks;
   const balance = isDemo ? demo.balance : liveBalance;
-  const contribution = isDemo ? demo.contribution : (profile?.contribution_cents || 1800);
+  const contribution = isDemo ? demo.contribution : (membership?.amount_cents || profile?.contribution_cents || 1800);
   const firstName = isDemo ? demo.name : (profile?.display_name || user?.user_metadata?.display_name || 'Friend');
   const timeZone = profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const days = monthDays(today);
@@ -113,10 +117,12 @@ function AppContent() {
     const [p, c, l, f] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('checkins').select('*').eq('user_id', user.id).order('checkin_date', { ascending: false }),
-      supabase.from('ledger').select('*').eq('user_id', user.id).order('created_at', { ascending: false }),
+      supabase.from('ledger').select('*').eq('livemode', paymentsLive).eq('user_id', user.id).order('created_at', { ascending: false }),
       supabase.from('checkins').select('*, profiles(display_name)').eq('shared', true).order('created_at', { ascending: false }).limit(30),
     ]);
     for (const result of [p,c,l,f]) if (result.error) throw result.error;
+    const billing = await billingAction('status');
+    setMembership(billing.membership); setEnrolledMonths((billing.enrollments || []).map((e:any)=>e.month)); setRecipients(billing.recipients || []);
     setProfile(p.data);
     const paths = [...new Set([...(c.data || []), ...(f.data || [])].map(row => row.photo_path))];
     const urls = paths.length ? await supabase.storage.from('checkins').createSignedUrls(paths, 3600) : null;
@@ -159,22 +165,32 @@ function AppContent() {
       if (!isDemo) {
         if (busy) return;
         setBusy(true);
-        if (await testContribution(cents)) { setSheet(null); setNotice('Stripe test payment confirmed. No real money was charged and no paid challenge was entered.'); }
+        if (!recurringConsent) throw new Error('Accept monthly billing before subscribing.');
+        if (await subscribeContribution(cents)) { setSheet(null); setNotice(paymentsLive ? 'Payment submitted. Enrollment appears after server confirmation.' : 'Test subscription submitted. No real funds charged.'); await refreshLive(); }
         return;
       }
       setDemo(d => ({ ...d, contribution: cents })); setSheet(null); setNotice('Demo contribution updated. No payment was taken.');
     } catch (e: any) { setNotice(e.message); } finally { setBusy(false); }
   }
-  function moveMoney() {
+  async function moveMoney() {
     try {
-      if (!isDemo) { setNotice('Live payouts and donations are not enabled yet.'); return; }
+      if (!isDemo) {
+        if (busy) return;
+        setBusy(true);
+        if (!/^\d+(\.\d{1,2})?$/.test(amount.trim())) throw new Error('Enter a valid amount.');
+        const cents = Math.round(Number(amount) * 100);
+        if (transfer === 'donate' && !recipients.some(r => r.id === cause)) throw new Error('Select a verified recipient.');
+        const requestId = 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => { const r = Math.random()*16|0; return (c === 'x' ? r : (r&3|8)).toString(16); });
+        await billingAction('withdraw', {amountCents:cents, requestId, ...(transfer==='donate'?{recipientId:cause}:{})});
+        setSheet(null); setNotice('Transferred to the recipient Stripe account. Bank delivery follows its payout schedule.'); await refreshLive(); return;
+      }
       if (!/^\d+(\.\d{1,2})?$/.test(amount.trim())) throw new Error('Enter a valid amount.');
       const cents = Math.round(Number(amount) * 100);
       if (cents <= 0 || cents > balance) throw new Error('Choose an amount within your available balance.');
       if (transfer === 'donate' && !cause.trim()) throw new Error('Choose or enter a cause.');
       setDemo(d => ({ ...d, balance: d.balance - cents, transactions: [{ id: String(Date.now()), title: transfer === 'donate' ? `Demo donation · ${cause.trim()}` : 'Demo withdrawal', cents: -cents, date: today }, ...d.transactions] }));
       setSheet(null); setNotice('Demo transaction recorded. No real money moved.');
-    } catch (e: any) { setNotice(e.message); }
+    } catch (e: any) { setNotice(e.message); } finally { setBusy(false); }
   }
   async function signInWithApple() {
     if (busy) return;
@@ -211,7 +227,7 @@ function AppContent() {
       setSheet(null); setPassword(''); setNotice(data.session ? 'Welcome to your daily practice.' : 'Check your email to confirm your account, then sign in.');
     } catch (e: any) { setNotice(e.message); } finally { setBusy(false); }
   }
-  const openContribution = () => { setAmount(String(contribution / 100)); setSheet('contribution'); };
+  const openContribution = () => { setRecurringConsent(false); setAmount(String(contribution / 100)); setSheet('contribution'); };
   const openTransfer = (type: 'withdraw' | 'donate') => { setTransfer(type); setAmount('18'); setCause(''); setSheet('transfer'); };
   const localPosts: Post[] = checks.filter(c => c.uri && c.shared).map(c => ({ id: c.date, name: `${firstName} (you)`, caption: c.caption || 'Another day. Another connection.', date: c.date, uri: c.uri, initials: firstName.slice(0, 2).toUpperCase(), color: C.gold }));
   const samplePosts: Post[] = [
@@ -239,6 +255,7 @@ function AppContent() {
   </>;
   const challengeScreen = <>
     <Text style={s.title}>Challenge</Text>
+    {!isDemo&&<Text style={[s.caption,{marginBottom:18}]}>{paymentsLive?'':'Test mode · '}{enrolledMonths.includes(today.slice(0,7)+'-01')?'Enrolled this month':membership?.cancel_at_period_end?'Renewal canceled':membership?.status==='active'?(enrolledMonths.some(m=>m>today)?'Next month enrolled':'Payment confirmation pending'):membership?`Membership: ${membership.status}`:'No paid membership'}</Text>}
     <View style={s.card}><View style={[s.row,{justifyContent:'space-between'}]}><Text style={s.sectionTitle}>{monthName}</Text><Text style={{color:C.gold,fontSize:15}}>{monthChecks.length}/{required.length}</Text></View><View style={{alignItems:'center',paddingVertical:24}}><Ring count={monthChecks.length} total={required.length}/></View>{renderCalendar()}</View>
     <Section title="Monthly contribution"/>
     <Pressable style={[s.card,s.row,{justifyContent:'space-between'}]} onPress={openContribution}><Text style={s.statNumber}>{money(contribution)}</Text><Icon name="chevron-forward"/></Pressable>
@@ -273,10 +290,10 @@ function AppContent() {
     </View>
     <Modal visible={!!sheet} transparent animationType="fade" onRequestClose={()=>!busy&&setSheet(null)}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={()=>!busy&&setSheet(null)} accessibilityLabel="Close dialog"/><View style={[s.modal,{maxHeight:'90%',width:Math.min(width-32,480)}]}><View style={[s.row,{justifyContent:'space-between',marginBottom:24}]}><Text style={s.sectionTitle}>{sheet==='photo'?'Your daily moment':sheet==='contribution'?'Make your commitment':sheet==='transfer'?(transfer==='donate'?'Give to a cause':'Withdraw rewards'):sheet==='auth'?(signup?'Welcome to the community':'Welcome back'):'The challenge, simply.'}</Text><Pressable onPress={()=>!busy&&setSheet(null)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={12}><Icon name="close"/></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
     {sheet==='photo'&&<>{rest||completed?<View><Text style={[s.body,{marginBottom:20}]}>{rest?'Shabbat shalom. No photo needed today.':'You already posted today. Come back tomorrow for your next wrap.'}</Text><Button label="Back to today" onPress={()=>{setTab('Today');setSheet(null);}}/></View>:<>{photo?<Image source={{uri:photo}} style={{width:'100%',height:280,borderRadius:16,marginBottom:18}}/>:<View style={s.photoPlaceholder}><Icon name="camera-outline" size={44} color={C.gold}/><Text style={[s.body,{textAlign:'center',marginTop:15}]}>Add your photo</Text></View>}<View style={[s.row,{gap:10,marginBottom:18}]}><View style={{flex:1}}><Button label="Camera" icon="camera-outline" secondary onPress={()=>pickPhoto(true)}/></View><View style={{flex:1}}><Button label="Choose photo" secondary onPress={()=>pickPhoto(false)}/></View></View><TextInput style={[s.input,{minHeight:80}]} placeholder="A thought from today (optional)" placeholderTextColor={C.dim} value={caption} onChangeText={setCaption} multiline maxLength={500}/><View style={[s.row,{justifyContent:'space-between',marginVertical:20}]}><View style={{flex:1}}><Text style={[s.body,{color:C.text}]}>Share with the community</Text></View><Switch value={sharePhoto} onValueChange={setSharePhoto} trackColor={{false:C.line,true:'#2478FF'}} thumbColor={C.text}/></View><Button label={busy?'Posting…':isDemo?'Save demo wrap':'Post today’s wrap'} onPress={postPhoto} disabled={!photo||busy}/><Text style={[s.tiny,{marginTop:15,textAlign:'center'}]}>{isDemo?'Demo photos are saved on this device only.':'Members can see shared photos. Private photos stay yours.'}</Text></>}</>}
-    {sheet==='contribution'&&<><View style={[s.row,{gap:10,marginBottom:20}]}>{['5','18','36','54'].map(v=><Pressable key={v} onPress={()=>setAmount(v)} style={[s.amountChip,amount===v&&{borderColor:C.gold,backgroundColor:'#11254A'}]}><Text style={{color:amount===v?C.gold:C.text,fontSize:18,fontWeight:'500'}}>${v}</Text>{v==='18'&&<Text style={{color:C.gold,fontSize:8,marginTop:4}}>RECOMMENDED</Text>}</Pressable>)}</View><Text style={[s.caption,{marginBottom:9}]}>Monthly contribution (USD)</Text><TextInput accessibilityLabel="Monthly contribution in dollars" style={s.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad"/><Text style={[s.tiny,{marginVertical:18}]}>$5 minimum. For the demo, changes apply immediately. Paid challenges will begin on the first of the next month.</Text><Button label={busy?'Opening checkout…':isDemo?'Set demo contribution':'Test card payment'} disabled={busy} onPress={saveContribution}/><Text style={[s.tiny,{marginTop:14,textAlign:'center'}]}>{isDemo?'No charge will be made.':'Stripe test mode. No real charge or challenge enrollment.'}</Text></>}
-    {sheet==='transfer'&&<><Tag label={isDemo?'Demo transaction':'Payments not yet connected'} color={C.gold}/><Text style={[s.body,{marginVertical:20}]}>Available balance: {money(balance)}. {isDemo?'Try the flow using sample rewards.':'Live payouts require a connected payment provider.'}</Text>{transfer==='donate'&&<><Text style={[s.caption,{marginBottom:10}]}>Choose a cause or enter your own</Text><View style={{gap:8,marginBottom:13}}>{['Jewish community fund','Food assistance','Jewish education'].map(v=><Pressable key={v} style={[s.causeOption,cause===v&&{borderColor:C.gold}]} onPress={()=>setCause(v)}><Icon name={cause===v?'radio-button-on':'radio-button-off'} color={cause===v?C.gold:C.dim} size={18}/><Text style={s.body}>{v}</Text></Pressable>)}</View><TextInput placeholder="Name of your chosen organization" placeholderTextColor={C.dim} value={cause} onChangeText={setCause} style={[s.input,{marginBottom:20}]}/></>}<Text style={[s.caption,{marginBottom:10}]}>Amount (USD)</Text><TextInput accessibilityLabel="Transfer amount in dollars" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={s.input}/><View style={{marginTop:20}}><Button label={isDemo?`Simulate ${transfer==='donate'?'donation':'withdrawal'}`:'Live transfers unavailable'} onPress={moveMoney}/></View><Text style={[s.tiny,{marginTop:15}]}>No real funds will be moved. Demo causes are categories, not linked recipient accounts.</Text></>}
+    {sheet==='contribution'&&<><View style={[s.row,{gap:10,marginBottom:20}]}>{['5','18','36','54'].map(v=><Pressable key={v} onPress={()=>setAmount(v)} style={[s.amountChip,amount===v&&{borderColor:C.gold,backgroundColor:'#11254A'}]}><Text style={{color:amount===v?C.gold:C.text,fontSize:18,fontWeight:'500'}}>${v}</Text>{v==='18'&&<Text style={{color:C.gold,fontSize:8,marginTop:4}}>RECOMMENDED</Text>}</Pressable>)}</View><Text style={[s.caption,{marginBottom:9}]}>Monthly contribution (USD)</Text><TextInput accessibilityLabel="Monthly contribution in dollars" style={s.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad"/><Text style={[s.tiny,{marginVertical:18}]}>$5 minimum. For the demo, changes apply immediately. Paid challenges will begin on the first of the next month.</Text>{!isDemo&&<View style={[s.row,{gap:12,marginBottom:18}]}><Switch accessibilityLabel="Agree to monthly billing" value={recurringConsent} onValueChange={setRecurringConsent}/><Text style={[s.caption,{flex:1}]}>I agree to {money(Math.round(Number(amount||0)*100))} monthly, starting now. Each paid invoice funds the next calendar month. Cancel renewal anytime.</Text></View>}<Button label={busy?'Opening checkout…':isDemo?'Set demo contribution':paymentsLive?'Subscribe':'Subscribe in test mode'} disabled={busy||(!isDemo&&!recurringConsent)} onPress={saveContribution}/>{!isDemo&&membership&&<Button label={membership.cancel_at_period_end?'Renewal canceled':'Cancel renewal'} disabled={busy||membership.cancel_at_period_end} secondary onPress={async()=>{try{setBusy(true);await billingAction('cancel');await refreshLive();setNotice('Renewal canceled. Your paid month remains enrolled.');}catch(e:any){setNotice(e.message);}finally{setBusy(false);}}}/>}<Text style={[s.tiny,{marginTop:14,textAlign:'center'}]}>{isDemo?'No charge will be made.':paymentsLive?'Payment is verified before enrollment. Processing fees are deducted from the pool.':'Stripe test mode. Test enrollments and balances stay separate.'}</Text></>}
+    {sheet==='transfer'&&<><Tag label={isDemo?'Demo transaction':paymentsLive?'Withdrawal':'Test withdrawal'} color={C.gold}/><Text style={[s.body,{marginVertical:20}]}>Available balance: {money(balance)}. {isDemo?'Try the flow using sample rewards.':'Complete payout setup before withdrawing.'}</Text>{!isDemo&&transfer==='withdraw'&&<Button label="Set up payout account" secondary onPress={async()=>{try{const result=await billingAction('onboard');await Linking.openURL(result.url);}catch(e:any){setNotice(e.message);}}}/>} {transfer==='donate'&&<><Text style={[s.caption,{marginBottom:10}]}>Choose a cause or enter your own</Text><View style={{gap:8,marginBottom:13}}>{(isDemo?['Jewish community fund','Food assistance','Jewish education']:recipients.map(r=>r.id)).map(v=><Pressable key={v} style={[s.causeOption,cause===v&&{borderColor:C.gold}]} onPress={()=>setCause(v)}><Icon name={cause===v?'radio-button-on':'radio-button-off'} color={cause===v?C.gold:C.dim} size={18}/><Text style={s.body}>{isDemo?v:recipients.find(r=>r.id===v)?.name}</Text></Pressable>)}</View>{!isDemo&&recipients.length===0&&<Text style={s.caption}>No verified donation recipients available yet.</Text>}{isDemo&&<TextInput placeholder="Name of your chosen organization" placeholderTextColor={C.dim} value={cause} onChangeText={setCause} style={[s.input,{marginBottom:20}]}/>}</>}<Text style={[s.caption,{marginBottom:10}]}>Amount (USD)</Text><TextInput accessibilityLabel="Transfer amount in dollars" value={amount} onChangeText={setAmount} keyboardType="decimal-pad" style={s.input}/><View style={{marginTop:20}}><Button label={isDemo?`Simulate ${transfer==='donate'?'donation':'withdrawal'}`:busy?'Processing…':transfer==='donate'?'Donate':'Withdraw'} disabled={busy} onPress={moveMoney}/></View><Text style={[s.tiny,{marginTop:15}]}>{isDemo?'Demo funds only.':paymentsLive?'Funds are reserved immediately; bank arrival depends on Stripe.':'Test funds only.'}</Text></>}
     {sheet==='auth'&&<>{!supabase&&<Text style={[s.noticeInline,{marginBottom:20}]}>Live signup is being connected. The full demo is ready to explore.</Text>}{signup&&<TextInput accessibilityLabel="Your first name" placeholder="Your first name" placeholderTextColor={C.dim} style={[s.input,{marginBottom:12}]} value={name} onChangeText={setName} autoComplete="given-name"/>}<TextInput accessibilityLabel="Email address" placeholder="Email address" placeholderTextColor={C.dim} style={[s.input,{marginBottom:12}]} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email"/><TextInput accessibilityLabel="Password" placeholder="Password (8+ characters)" placeholderTextColor={C.dim} style={[s.input,{marginBottom:20}]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup?'new-password':'current-password'}/><Button label={busy?'Please wait…':signup?'Create account':'Sign in'} disabled={busy} onPress={authenticate}/><Pressable onPress={()=>setSignup(!signup)} style={{padding:20,alignItems:'center'}}><Text style={s.textLink}>{signup?'Already a member? Sign in':'New here? Create an account'}</Text></Pressable></>}
-    {sheet==='rules'&&<>{[{title:'A full month of intention',body:'Choose $5 or more; $18 is recommended. A paid challenge begins on the first day of a calendar month. Everyone contributes before the month starts.'},{title:'One photo, every required day',body:'Post a photo of yourself wearing tefillin each day, using your account’s timezone. Saturdays are excluded. Only one check-in per date is accepted; past dates cannot be backfilled.'},{title:'Your share of the pool',body:'Miss one required day and your contribution goes to the reward pool. Complete every required day and receive your contribution back plus your proportional share of forfeited contributions. Example: if you contributed $18 of the finishers’ $180 total, you receive 10% of the forfeited pool.'},{title:'Rewards, over time',body:'Rewards stay in your balance until you withdraw or donate them. The proposed no-finisher rule is to roll the forfeited pool forward; this needs confirmation before real-money launch. Fees and chargeback handling also need final terms.'},{title:'Calendar details',body:'This preview implements the requested Saturday exemption only. Holiday, Chol Hamoed, and daylight cutoff rules need to be finalized before live challenges.'},{title:'Photo privacy',body:'Demo photos stay in local device storage. With a connected account, photos are stored in a private Supabase bucket. Shared photos are visible to signed-in members through temporary links. Photo authenticity review is not yet automated.'},{title:'About this preview',body:'Payments, withdrawals, and donations are simulated. No real money is charged or moved. Live financial operations require an approved provider and server-side verification.'}].map(item=><View key={item.title} style={{marginBottom:23}}><Text style={[s.body,{color:C.text,fontWeight:'600',marginBottom:7}]}>{item.title}</Text><Text style={s.body}>{item.body}</Text></View>)}</>}
+    {sheet==='rules'&&<>{[{title:'A full month of intention',body:'Choose $5 or more; $18 is recommended. A paid challenge begins on the first day of a calendar month. Everyone contributes before the month starts.'},{title:'One photo, every required day',body:'Post a photo of yourself wearing tefillin each day, using your account’s timezone. Saturdays are excluded. Only one check-in per date is accepted; past dates cannot be backfilled.'},{title:'Your share of the pool',body:'Miss one required day and your contribution goes to the reward pool. After payment processing fees are deducted from the full pool, finishers divide the remaining money in proportion to their contributions. Fees may reduce the amount of principal returned.'},{title:'Rewards, over time',body:'Rewards stay in your balance until you withdraw or donate them. The proposed no-finisher rule is to roll the forfeited pool forward; this needs confirmation before real-money launch. Processing fees are deducted before distribution. Refunds and disputes pause affected funds for review.'},{title:'Calendar details',body:'This preview implements the requested Saturday exemption only. Holiday, Chol Hamoed, and daylight cutoff rules need to be finalized before live challenges.'},{title:'Photo privacy',body:'Demo photos stay in local device storage. With a connected account, photos are stored in a private Supabase bucket. Shared photos are visible to signed-in members through temporary links. Photo authenticity review is not yet automated.'},{title:'About this preview',body:'The app clearly labels test-mode payments. Live mode charges real money after you accept monthly billing. Enrollment requires server-confirmed payment. Bank payouts require identity verification.'}].map(item=><View key={item.title} style={{marginBottom:23}}><Text style={[s.body,{color:C.text,fontWeight:'600',marginBottom:7}]}>{item.title}</Text><Text style={s.body}>{item.body}</Text></View>)}</>}
     </ScrollView></View>{notice&&<View accessibilityRole="alert" style={s.modalToast}><Text style={[s.body,{color:C.text}]}>{notice}</Text></View>}</KeyboardAvoidingView></Modal>
     {!!notice&&!sheet&&<Pressable onPress={()=>setNotice('')} accessibilityRole="alert" style={[s.toast,{bottom:showCover?30:100,left:20,right:20}]}><Icon name="information-circle-outline" color={C.gold}/><Text style={[s.body,{flex:1,color:C.text}]}>{notice}</Text><Icon name="close" size={17}/></Pressable>}
   </SafeAreaView>;

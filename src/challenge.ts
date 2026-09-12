@@ -38,3 +38,19 @@ export function allocatePool(entries: { id: string; cents: number; completed: bo
   for (const row of rewards) if (left-- > 0) row.rewardCents++;
   return { rewards: rewards.map(({ id, rewardCents }) => ({ id, rewardCents })), rolloverCents: 0 };
 }
+
+// Total credits (principal and reward) after fees, matching settle_net_month.
+export function allocateNetPool(entries: { id: string; cents: number; completed: boolean }[], feeCents: number) {
+  if (!Number.isSafeInteger(feeCents) || feeCents < 0 || new Set(entries.map(e => e.id)).size !== entries.length || entries.some(e => !Number.isSafeInteger(e.cents) || e.cents < 500)) throw new Error('Invalid pool');
+  const gross = entries.reduce((n, e) => n + BigInt(e.cents), 0n);
+  const net = gross - BigInt(feeCents);
+  if (net < 0n || net > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Invalid net pool');
+  const winners = entries.filter(e => e.completed);
+  if (!winners.length) return { credits: [], unsettledCents: Number(net) };
+  const weight = winners.reduce((n, e) => n + BigInt(e.cents), 0n);
+  const rows = winners.map(e => ({ id: e.id, cents: net * BigInt(e.cents) / weight, remainder: net * BigInt(e.cents) % weight }));
+  rows.sort((a,b) => a.remainder === b.remainder ? a.id.localeCompare(b.id) : a.remainder > b.remainder ? -1 : 1);
+  let left = net - rows.reduce((n,e) => n+e.cents,0n);
+  for (const row of rows) if (left > 0n) { row.cents++; left--; }
+  return { credits: rows.map(e => ({id:e.id,creditCents:Number(e.cents)})), unsettledCents: 0 };
+}

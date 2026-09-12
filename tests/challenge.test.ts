@@ -22,3 +22,12 @@ test('calendar excludes Saturday and handles leap years', () => {
 test('local date respects timezone around midnight', () => {
   assert.equal(dateKey(new Date('2026-09-12T02:00:00Z'),'America/New_York'),'2026-09-11');
 });
+
+test('net settlement deducts fees, conserves cents, and can reduce returned principal', async () => {
+  const { allocateNetPool } = await import('../src/challenge.ts');
+  const entries = [{id:'a',cents:1800,completed:true},{id:'b',cents:3600,completed:true},{id:'c',cents:1000,completed:false}];
+  assert.deepEqual(allocateNetPool(entries,300).credits,[{id:'b',creditCents:4067},{id:'a',creditCents:2033}]);
+  assert.equal(allocateNetPool([{id:'a',cents:500,completed:true}],45).credits[0].creditCents,455);
+  assert.equal(allocateNetPool([{id:'a',cents:500,completed:false}],45).unsettledCents,455);
+  assert.throws(()=>allocateNetPool(entries,6401));
+});
