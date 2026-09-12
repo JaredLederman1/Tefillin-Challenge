@@ -10,6 +10,7 @@ Deno.serve(async req=>{
    return reply({membership:m||null,enrollments:checked(await db().from('enrollments').select('month,contribution_cents,settled_at').eq('user_id',user.id).eq('livemode',mode)),recipients:checked(await db().from('donation_recipients').select('id,name').eq('enabled',true).eq('livemode',mode))});
   }
   if(body.action==='subscribe') {
+   if(!Deno.env.get(mode?'STRIPE_LIVE_WEBHOOK_SECRET':'STRIPE_WEBHOOK_SECRET')) return reply({error:'Payments are not ready yet. Payment confirmation setup is still required.'},503);
    const cents=body.amountCents;
    if(!Number.isSafeInteger(cents)||cents<500||cents>100000||body.recurringConsent!==true) return reply({error:'Choose $5–$1,000 and accept monthly billing.'},400);
    const m=checked(await db().rpc('reserve_membership',{member:user.id,mode,cents}));
