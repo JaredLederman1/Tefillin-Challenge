@@ -1,0 +1,62 @@
+{
+  "expo": {
+    "name": "Levav",
+    "slug": "tefillin-challenge",
+    "scheme": [
+      "levav",
+      "tefillinchallenge"
+    ],
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "dark",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash-icon.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#000000"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.jaredlederman.tefillinchallenge",
+      "infoPlist": {
+        "ITSAppUsesNonExemptEncryption": false
+      },
+      "usesAppleSignIn": true
+    },
+    "android": {
+      "package": "com.jaredlederman.tefillinchallenge",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#000000"
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png",
+      "bundler": "metro",
+      "output": "single"
+    },
+    "plugins": [
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Choose your daily tefillin photo to share with the community.",
+          "cameraPermission": "Take your daily tefillin photo.",
+          "microphonePermission": false
+        }
+      ],
+      "expo-apple-authentication",
+      [
+        "@stripe/stripe-react-native",
+        {
+          "enableGooglePay": false
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "2aa59bac-2432-44e5-959a-8c46c6333ef7"
+      }
+    },
+    "owner": "jaredlederman"
+  }
+}

@@ -1,0 +1,5 @@
+project_id = "tefillin-challenge"
+
+[functions.stripe-test-payment]
+# The handler validates the bearer token using auth.getUser before accessing Stripe.
+verify_jwt = false

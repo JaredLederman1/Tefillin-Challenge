@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024"><defs><mask id="shin"><rect width="1024" height="1024" fill="white"/><path d="M412 334L426 450Q429 486 467 486H557Q595 486 598 450L612 334M512 334V475" fill="none" stroke="black" stroke-width="29" stroke-linecap="square" stroke-linejoin="round"/></mask></defs><g mask="url(#shin)">
+  <path d="M330 560V646Q330 693 299 722L238 783" fill="none" stroke="#2478FF" stroke-width="46" stroke-linecap="round"/>
+  <path d="M694 560V663Q694 708 725 738L770 783" fill="none" stroke="#2478FF" stroke-width="46" stroke-linecap="round"/>
+  <path d="M343 255L402 212H625L681 255Z" fill="#2478FF"/>
+  <rect x="343" y="275" width="338" height="273" rx="12" fill="#2478FF"/>
+  <path d="M300 568H724V610H300Z" fill="#2478FF"/>
+</g></svg>
