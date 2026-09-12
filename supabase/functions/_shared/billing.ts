@@ -4,7 +4,7 @@ export const cors = { 'Access-Control-Allow-Origin': '*', 'Access-Control-Allow-
 export const reply = (body: unknown, status=200) => new Response(JSON.stringify(body), {status, headers:{...cors,'Content-Type':'application/json','Cache-Control':'no-store'}});
 export function key(mode:boolean) {
  const value=Deno.env.get(mode?'STRIPE_LIVE_SECRET_KEY':'STRIPE_SECRET_KEY');
- if(!value?.startsWith(mode?'sk_live_':'sk_test_')) throw new Error(mode?'Live Stripe credentials are not configured.':'Test Stripe credentials are not configured.');
+ if(!value || !(mode ? /^(sk|rk)_live_/ : /^(sk|rk)_test_/).test(value)) throw new Error(mode?'Live Stripe credentials are not configured.':'Test Stripe credentials are not configured.');
  return value;
 }
 export async function stripe(mode:boolean,path:string,body?:Record<string,string>,idempotency?:string,method?:string) {
