@@ -24,7 +24,7 @@ npm test
 
 Supabase migrations are in `supabase/migrations`; payment endpoints are in `supabase/functions/levav-billing` and `supabase/functions/levav-webhook`. Store `STRIPE_SECRET_KEY` only in Supabase's secret store. Never put secret keys into an `EXPO_PUBLIC_` variable or commit an environment file.
 
-Monthly subscriptions, signed webhook enrollment, fee-aware settlement and full-balance donation requests are implemented. Levav fulfills donations outside Stripe and records confirmation; cash withdrawals and Connect onboarding are retired. Live keys are configured, but live checkout still requires the live webhook signing secret. Configure an actual donation cause before members can donate. Photo review and donation fulfillment remain administrative tasks. See [payment operations](docs/payments.md).
+Monthly subscriptions, signed webhook enrollment, fee-aware settlement and full-balance donation requests are implemented. Levav fulfills donations outside Stripe and records confirmation; cash withdrawals and Connect onboarding are retired. Live keys and the webhook signing secret are configured. Friends of the IDF is enabled as the first donation cause. Full live checkout still needs verification. Photo review and donation fulfillment remain administrative tasks. See [payment operations](docs/payments.md).
 
 ## Website
 

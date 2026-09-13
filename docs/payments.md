@@ -15,7 +15,7 @@
 
 ## Current deployment
 
-The migration and both functions are deployed to the existing Supabase project. The sandbox webhook is registered and its signing secret is stored in Supabase. Live client and server keys are configured. Live checkout remains blocked until the live webhook signing secret is configured. The earlier standalone test-checkout endpoint remains for backward compatibility but is no longer the app's membership flow.
+The migration and both functions are deployed to the existing Supabase project. The sandbox webhook is registered and its signing secret is stored in Supabase. Live client and server keys and the live webhook signing secret are configured. A full live checkout has not yet been verified. The earlier standalone test-checkout endpoint remains for backward compatibility but is no longer the app's membership flow.
 
 The owner reported Stripe's approval of this business model by phone on September 12, 2026. No further written-confirmation gate is imposed by the application.
 
@@ -60,3 +60,7 @@ Never directly delete a request or edit its ledger debit. Use these functions so
 The giving balance contains settled returned contributions plus earnings, after pool fees. Active or upcoming contributions remain committed to the challenge and are not yet spendable. A forfeited month does not credit that month's contribution; it does not subtract older accumulated rewards. A new settlement after a donation can add a new balance.
 
 `tests/donations.sql` verifies full-balance debits, request retries, mode isolation, cross-user protection, overspending, cancellation, disabled causes, required fulfillment references, terminal states, and access restrictions using rollback-only fixtures.
+
+## Live configuration — September 13, 2026
+
+Friends of the IDF is enabled as the first live donation cause, with no expiration month. Live webhook `we_1UFCw2Cd2omq8A93gSLZ9giu` is active at the Supabase endpoint. Its signing secret is stored only in Supabase as `STRIPE_LIVE_WEBHOOK_SECRET`. The dashboard offered API version `2026-08-26.dahlia`; the handler retrieves payment and subscription objects using its own pinned API version. Selected events are invoice.payment_succeeded, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted, charge.refunded, charge.dispute.created, and charge.dispute.closed. No transfer events are needed for the retired payout flow. An unsigned request returned HTTP 400 Invalid signature. This verifies endpoint reachability and signature enforcement, not successful live payment delivery.
