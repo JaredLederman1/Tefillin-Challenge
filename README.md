@@ -24,7 +24,7 @@ npm test
 
 Supabase migrations are in `supabase/migrations`; payment endpoints are in `supabase/functions/levav-billing` and `supabase/functions/levav-webhook`. Store `STRIPE_SECRET_KEY` only in Supabase's secret store. Never put secret keys into an `EXPO_PUBLIC_` variable or commit an environment file.
 
-Monthly subscriptions, signed webhook enrollment, fee-aware settlement and Connect withdrawal code are implemented. The current deployment uses test keys, with test funds isolated from real funds. Live activation requires live keys, a live webhook and completed payout configuration. Photo review and exception handling remain administrative tasks. See [payment plan](docs/payments.md) for settlement behavior and remaining decisions.
+Monthly subscriptions, signed webhook enrollment, fee-aware settlement and full-balance donation requests are implemented. Levav fulfills donations outside Stripe and records confirmation; cash withdrawals and Connect onboarding are retired. Live keys are configured, but live checkout still requires the live webhook signing secret. Configure an actual donation cause before members can donate. Photo review and donation fulfillment remain administrative tasks. See [payment operations](docs/payments.md).
 
 ## Website
 
