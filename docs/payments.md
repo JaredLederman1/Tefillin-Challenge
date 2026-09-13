@@ -1,16 +1,16 @@
-# Levav payments
+# Ratzon payments
 
 ## Implemented
 
 - Native Stripe PaymentSheet for monthly subscriptions with explicit recurring consent and cancellation of renewal.
-- Authenticated `levav-billing` Edge Function. Amounts are checked server-side; an open membership is reused to prevent duplicate subscriptions.
-- `levav-webhook` verifies the raw-body Stripe signature, mode, invoice, payment, customer, amount, and charge before recording enrollment. Duplicate events are idempotent. Actual charge balance-transaction fees and availability dates are stored.
+- Authenticated `ratzon-billing` Edge Function. Amounts are checked server-side; an open membership is reused to prevent duplicate subscriptions.
+- `ratzon-webhook` verifies the raw-body Stripe signature, mode, invoice, payment, customer, amount, and charge before recording enrollment. Duplicate events are idempotent. Actual charge balance-transaction fees and availability dates are stored.
 - Each paid invoice enrolls the member for the next calendar month, based on the invoice issue date in the member's timezone. Renewals occur monthly on the Stripe subscription schedule. Payments confirmed after the eligible month begins are held for review rather than silently enrolled.
 - Separate live and test memberships, enrollments, settlements, balances, and donation requests.
 - Settlement distributes the full pool minus recorded charge-processing fees, weighted by successful members' contributions, with exact cent rounding. This may return less than principal when few people forfeit. Fees billed separately by Stripe, including any Billing or Connect fees, require separate reconciliation and are not yet deducted by this calculation.
 - Daily 15:00 UTC database job attempts settlement of completed months. It waits for approved photos and reconciled, available funds. Failures are recorded in `settlement_attempts`.
 - Full-balance donation requests use administrator-approved `donation_causes`. The balance is debited atomically and the request retains the cause name and amount. Repeating the same request is idempotent; live/test funds stay separate. Users can see pending, fulfilled, and canceled requests.
-- Levav fulfills donations manually outside Stripe. Fulfillment requires a reference; cancellation restores the balance exactly once. No Connect onboarding or payout action is available, including to older app clients. Historical payout data is retained for reconciliation.
+- Ratzon fulfills donations manually outside Stripe. Fulfillment requires a reference; cancellation restores the balance exactly once. No Connect onboarding or payout action is available, including to older app clients. Historical payout data is retained for reconciliation.
 - Refunds/disputes put invoice funds into review and pause new donations while unresolved. Previously pending payouts also block donations until reconciled.
 
 ## Current deployment
@@ -22,7 +22,7 @@ The owner reported Stripe's approval of this business model by phone on Septembe
 ## Live activation
 
 1. Store `STRIPE_LIVE_SECRET_KEY` in Supabase Secrets. The existing `sk_test_` key cannot be reused as a live key.
-2. In the live Stripe account, register a webhook endpoint at `https://qpaiaywpgmusmydivuoq.supabase.co/functions/v1/levav-webhook`, using API version `2025-06-30.basil`. Subscribe to `invoice.payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, and `transfer.reversed`. Store its signing secret as `STRIPE_LIVE_WEBHOOK_SECRET` in Supabase.
+2. In the live Stripe account, register a webhook endpoint at `https://qpaiaywpgmusmydivuoq.supabase.co/functions/v1/ratzon-webhook`, using API version `2025-06-30.basil`. Subscribe to `invoice.payment_succeeded`, `customer.subscription.created`, `customer.subscription.updated`, `customer.subscription.deleted`, `charge.refunded`, `charge.dispute.created`, `charge.dispute.closed`, and `transfer.reversed`. Store its signing secret as `STRIPE_LIVE_WEBHOOK_SECRET` in Supabase.
 3. Set the app's `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` to the matching `pk_live_` key and restart/rebuild. Never put either secret in an Expo public variable or Git.
 4. Configure at least one approved donation cause using the instructions below. Connect is no longer part of the donation flow.
 5. Build and install the native app with Stripe support (`npm run build:ios`). Native checkout and device redirect behavior still require device testing.
@@ -55,7 +55,7 @@ For a request that cannot be fulfilled, restore its balance with:
 select public.resolve_donation('REQUEST_UUID', 'canceled', 'Reason for cancellation');
 ```
 
-Never directly delete a request or edit its ledger debit. Use these functions so resolution is recorded and cancellations cannot credit twice. The reference appears to the member, so use a member-safe reference without private payment details. App confirmations acknowledge Levav's request/fulfillment; they are not charity-issued tax receipts.
+Never directly delete a request or edit its ledger debit. Use these functions so resolution is recorded and cancellations cannot credit twice. The reference appears to the member, so use a member-safe reference without private payment details. App confirmations acknowledge Ratzon's request/fulfillment; they are not charity-issued tax receipts.
 
 The giving balance contains settled returned contributions plus earnings, after pool fees. Active or upcoming contributions remain committed to the challenge and are not yet spendable. A forfeited month does not credit that month's contribution; it does not subtract older accumulated rewards. A new settlement after a donation can add a new balance.
 

@@ -9,3 +9,9 @@ verify_jwt = false
 
 [functions.levav-webhook]
 verify_jwt = false
+
+[functions.ratzon-billing]
+verify_jwt = false
+
+[functions.ratzon-webhook]
+verify_jwt = false

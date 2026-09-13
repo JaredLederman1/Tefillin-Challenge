@@ -1,8 +1,9 @@
 {
   "expo": {
-    "name": "Levav",
+    "name": "Ratzon",
     "slug": "tefillin-challenge",
     "scheme": [
+      "ratzon",
       "levav",
       "tefillinchallenge"
     ],

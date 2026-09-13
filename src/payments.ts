@@ -4,7 +4,7 @@ import { supabase } from './supabase';
 export const paymentsLive = process.env.EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY?.startsWith('pk_live_') === true;
 export async function billingAction(action: string, body: Record<string, unknown> = {}) {
   if (!supabase) throw new Error('Sign in required.');
-  const result = await supabase.functions.invoke('levav-billing', { body: { action, ...body, livemode: paymentsLive } });
+  const result = await supabase.functions.invoke('ratzon-billing', { body: { action, ...body, livemode: paymentsLive } });
   if (result.error) {
     const response = (result.error as any).context;
     let message = 'Payment service unavailable. Please try again.';
@@ -24,7 +24,7 @@ export async function subscribeContribution(amountCents: number) {
   const stripe = await import('@stripe/stripe-react-native');
   await stripe.initStripe({ publishableKey, urlScheme: 'tefillinchallenge' });
   const data = await billingAction('subscribe', { amountCents, recurringConsent: true });
-  const initialized = await stripe.initPaymentSheet({ merchantDisplayName: 'Levav', paymentIntentClientSecret: data.clientSecret, returnURL: 'tefillinchallenge://stripe-redirect', style: 'alwaysDark', primaryButtonLabel: paymentsLive ? 'Subscribe' : 'Subscribe (test mode)', appearance: { colors: { primary: '#2478FF', background: '#000000', componentBackground: '#101114', componentText: '#FFFFFF', primaryText: '#FFFFFF' } } });
+  const initialized = await stripe.initPaymentSheet({ merchantDisplayName: 'Ratzon', paymentIntentClientSecret: data.clientSecret, returnURL: 'tefillinchallenge://stripe-redirect', style: 'alwaysDark', primaryButtonLabel: paymentsLive ? 'Subscribe' : 'Subscribe (test mode)', appearance: { colors: { primary: '#2478FF', background: '#000000', componentBackground: '#101114', componentText: '#FFFFFF', primaryText: '#FFFFFF' } } });
   if (initialized.error) throw new Error(initialized.error.message);
   const redirect = Linking.addEventListener('url', ({ url }) => { stripe.handleURLCallback(url).catch(() => {}); });
   let presented;

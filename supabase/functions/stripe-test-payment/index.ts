@@ -19,7 +19,7 @@ Deno.serve(async req => {
     if (body.action === 'create') {
       if (!Number.isSafeInteger(body.amountCents) || body.amountCents < 500 || body.amountCents > 100000) return reply({ error: 'Choose $5 to $1,000.' }, 400);
       if (typeof body.attemptId !== 'string' || !/^[a-zA-Z0-9-]{16,80}$/.test(body.attemptId)) return reply({ error: 'Invalid payment attempt.' }, 400);
-      const params = new URLSearchParams({ amount: String(body.amountCents), currency: 'usd', 'payment_method_types[]': 'card', 'metadata[user_id]': user.id, 'metadata[purpose]': 'tefillin_test_checkout', description: 'Levav — test checkout only' });
+      const params = new URLSearchParams({ amount: String(body.amountCents), currency: 'usd', 'payment_method_types[]': 'card', 'metadata[user_id]': user.id, 'metadata[purpose]': 'tefillin_test_checkout', description: 'Ratzon — test checkout only' });
       const response = await fetch('https://api.stripe.com/v1/payment_intents', { method: 'POST', headers: { Authorization: `Bearer ${secret}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Idempotency-Key': `tefillin-test-${user.id}-${body.attemptId}` }, body: params });
       const intent = await response.json();
       if (!response.ok || intent.livemode !== false) return reply({ error: 'Unable to start test payment. Try again.' }, 502);

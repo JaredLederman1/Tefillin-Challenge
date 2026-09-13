@@ -21,7 +21,7 @@ const svg = body=>`<svg xmlns="http://www.w3.org/2000/svg" width="512" height="5
   await sharp(Buffer.from(svg(`<rect width="512" height="512" fill="#000"/>${c.body}`))).png().toFile(path.join(dir,c.id+'.png'));
  }
  const sheet = `<svg xmlns="http://www.w3.org/2000/svg" width="1536" height="1220" viewBox="0 0 1536 1220"><rect width="1536" height="1220" fill="#000"/>
- <text x="64" y="77" fill="${blue}" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700">Levav</text><path d="M64 108H1472" stroke="#22252C"/>
+ <text x="64" y="77" fill="${blue}" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700">Ratzon</text><path d="M64 108H1472" stroke="#22252C"/>
  ${concepts.map((c,i)=>{const x=64+(i%3)*496,y=147+Math.floor(i/3)*493;return `<g transform="translate(${x+50} ${y}) scale(.68)">${c.body}</g><text x="${x+15}" y="${y+382}" fill="#fff" font-family="Arial,Helvetica,sans-serif" font-size="19" font-weight="700">0${i+1} / ${c.name}</text><g transform="translate(${x+349} ${y+341}) scale(.12)"><rect width="512" height="512" rx="112" fill="#13151A"/>${c.body}</g>`}).join('')}
  <text x="64" y="1170" fill="#777E8A" font-family="Arial,Helvetica,sans-serif" font-size="18">SHIN / TEFILLIN</text><text x="1472" y="1170" text-anchor="end" fill="${blue}" font-family="Arial,Helvetica,sans-serif" font-size="18">#2478FF</text></svg>`;
  await sharp(Buffer.from(sheet)).png().toFile(path.join(dir,'shin-directions.png'));

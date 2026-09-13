@@ -1,4 +1,4 @@
-# Levav
+# Ratzon
 
 A native Expo app for a community centered on daily tefillin practice, with a black-and-blue design, photo check-ins, streaks, calendar, and a proposed monthly contribution pool.
 
@@ -11,7 +11,7 @@ cp .env.example .env
 npx expo start --dev-client
 ```
 
-Native modules, including Stripe, require a compatible development build. Create an iOS development build with `npm run build:ios`; Apple Developer credentials and device provisioning are required. The existing Expo project and native application identifiers are retained, while the display name is Levav.
+Native modules, including Stripe, require a compatible development build. Create an iOS development build with `npm run build:ios`; Apple Developer credentials and device provisioning are required. The existing Expo project and native application identifiers are retained, while the display name is Ratzon.
 
 ## Checks
 
@@ -22,9 +22,9 @@ npm test
 
 ## Backend and payment status
 
-Supabase migrations are in `supabase/migrations`; payment endpoints are in `supabase/functions/levav-billing` and `supabase/functions/levav-webhook`. Store `STRIPE_SECRET_KEY` only in Supabase's secret store. Never put secret keys into an `EXPO_PUBLIC_` variable or commit an environment file.
+Supabase migrations are in `supabase/migrations`; payment endpoints are in `supabase/functions/ratzon-billing` and `supabase/functions/ratzon-webhook`. Store `STRIPE_SECRET_KEY` only in Supabase's secret store. Never put secret keys into an `EXPO_PUBLIC_` variable or commit an environment file.
 
-Monthly subscriptions, signed webhook enrollment, fee-aware settlement and full-balance donation requests are implemented. Levav fulfills donations outside Stripe and records confirmation; cash withdrawals and Connect onboarding are retired. Live keys and the webhook signing secret are configured. Friends of the IDF is enabled as the first donation cause. Full live checkout still needs verification. Photo review and donation fulfillment remain administrative tasks. See [payment operations](docs/payments.md).
+Monthly subscriptions, signed webhook enrollment, fee-aware settlement and full-balance donation requests are implemented. Ratzon fulfills donations outside Stripe and records confirmation; cash withdrawals and Connect onboarding are retired. Live keys and the webhook signing secret are configured. Friends of the IDF is enabled as the first donation cause. Full live checkout still needs verification. Photo review and donation fulfillment remain administrative tasks. See [payment operations](docs/payments.md).
 
 ## Website
 
