@@ -3,25 +3,41 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="theme-color" content="#000000">
+  <meta name="theme-color" content="#edf4ff">
   <meta name="description" content="Ratzon. Coming soon.">
-  <title>Ratzon</title>
-  <link rel="icon" href="./logo.svg" type="image/svg+xml">
+  <meta property="og:title" content="Ratzon — Coming soon">
+  <meta property="og:description" content="Ratzon. Coming soon.">
+  <meta property="og:image" content="https://ratzonapp.com/media/app-cover.png">
+  <meta property="og:url" content="https://ratzonapp.com">
+  <title>Ratzon — Coming soon</title>
+  <link rel="icon" href="./media/favicon.png" type="image/png">
+  <link rel="preload" href="./media/logo.png" as="image">
+  <link rel="preload" href="./media/word-mark-without-r.png" as="image">
   <style>
-    :root { color-scheme: dark; background: #000; color: #2478ff; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-    * { box-sizing: border-box; }
-    body { margin: 0; min-height: 100vh; min-height: 100svh; display: grid; place-items: center; }
-    main { padding: 48px 24px; text-align: center; }
-    img { display: block; width: clamp(144px, 25vw, 200px); height: auto; margin: 0 auto 28px; }
-    h1 { font-size: clamp(48px, 9vw, 64px); line-height: 1.05; font-weight: 700; letter-spacing: -.055em; margin: 0; }
-    p { color: #a1a1aa; font-size: 16px; line-height: 1.5; margin: 24px 0 0; }
+    :root{color-scheme:light;font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:#062b60;background:#edf4ff;font-synthesis:none}
+    *{box-sizing:border-box}
+    body{margin:0;min-height:100svh;background:linear-gradient(180deg,#f8fbff 0%,#e8f1ff 50%,#d7e7ff 100%)}
+    main{min-height:100svh;position:relative}
+    .brand{--w:min(calc(100vw - 64px),640px);width:var(--w);height:calc(var(--w)*.336906);position:absolute;top:50%;left:50%;transform:translate(-50%,-50%)}
+    .brand-r{position:absolute;left:36.5%;bottom:0;width:27%;height:100%}
+    .brand-r>img{display:block;width:100%;height:100%;object-fit:contain}
+    .tail{position:absolute;left:100%;bottom:0;width:0;height:56.5%;overflow:hidden}
+    .tail img{display:block;width:calc(var(--w)*.73);height:100%;max-width:none}
+    .ready .brand-r{animation:slide 1.25s .65s cubic-bezier(.65,0,.35,1) both}
+    .ready .tail{animation:reveal 1.25s .65s cubic-bezier(.65,0,.35,1) both}
+    @keyframes slide{to{left:0}}
+    @keyframes reveal{to{width:270.37%}}
+    h1{position:absolute;top:calc(50% + min(calc((100vw - 64px)*.168453),107.81px) + 36px);left:0;right:0;margin:0;text-align:center;font-size:16px;font-weight:400;letter-spacing:.02em;line-height:1.5}
+    @media(max-height:420px){.brand{--w:min(calc(100vw - 64px),400px)}h1{top:calc(50% + min(calc((100vw - 64px)*.168453),67.39px) + 24px)}}
+    @media(prefers-reduced-motion:reduce){.brand-r,.ready .brand-r{animation:none;left:0}.tail,.ready .tail{animation:none;width:270.37%}}
   </style>
+  <noscript><style>.brand-r{left:0}.tail{width:270.37%}</style></noscript>
 </head>
 <body>
   <main>
-    <img src="./logo.svg" alt="" width="200" height="200">
-    <h1>Ratzon</h1>
-    <p>Coming soon.</p>
+    <div class="brand" role="img" aria-label="Ratzon"><div class="brand-r"><img src="./media/logo.png" alt="" width="795" height="992"><div class="tail"><img src="./media/word-mark-without-r.png" alt="" width="1761" height="459"></div></div></div>
+    <h1>Coming soon</h1>
   </main>
+  <script>Promise.all(Array.from(document.querySelectorAll('.brand img'),img=>img.decode().catch(()=>{}))).then(()=>document.documentElement.classList.add('ready'));</script>
 </body>
 </html>
