@@ -20,14 +20,16 @@ Deno.serve(async req=>{
   if(event.type.startsWith('customer.subscription.')) {
    if(obj.metadata?.purpose==='levav_membership')await syncSubscription(mode,await stripe(mode,`subscriptions/${obj.id}`));
   }else if(event.type==='invoice.payment_succeeded') {
-   const invoice=await stripe(mode,`invoices/${obj.id}?expand[]=payments.data.payment.payment_intent`);
+   const invoice=await stripe(mode,`invoices/${obj.id}?expand[]=payment_intent&expand[]=payments.data.payment.payment_intent`);
    const sid=invoice.parent?.subscription_details?.subscription;
    if(!sid)return reply({received:true});
    const sub=await stripe(mode,`subscriptions/${sid}`);
    if(sub.metadata?.purpose!=='levav_membership')return reply({received:true});
    const m=checked(await db().from('billing_memberships').select('*').eq('id',sub.metadata.membership_id).eq('livemode',mode).single());
    if(invoice.livemode!==mode||invoice.currency!=='usd'||invoice.status!=='paid'||invoice.amount_paid!==m.amount_cents||invoice.customer!==sub.customer)throw new Error('Invoice mismatch');
-   let payment=invoice.payments?.data?.find((p:any)=>p.status==='paid'&&p.payment?.type==='payment_intent')?.payment?.payment_intent;
+   // Support both Stripe invoice payment shapes so a successful Apple Pay
+   // payment cannot be left out of the member's wallet.
+   let payment=invoice.payment_intent||invoice.payments?.data?.find((p:any)=>p.status==='paid'&&p.payment?.type==='payment_intent')?.payment?.payment_intent;
    if(typeof payment==='string')payment=await stripe(mode,`payment_intents/${payment}`);
    if(!payment||payment.status!=='succeeded'||payment.amount_received!==invoice.amount_paid||payment.customer!==sub.customer||payment.livemode!==mode)throw new Error('Payment pending verification');
    const charge=await stripe(mode,`charges/${payment.latest_charge}?expand[]=balance_transaction`);

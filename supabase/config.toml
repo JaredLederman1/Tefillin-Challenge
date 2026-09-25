@@ -4,14 +4,12 @@ project_id = "tefillin-challenge"
 # The handler validates the bearer token using auth.getUser before accessing Stripe.
 verify_jwt = false
 
-[functions.levav-billing]
-verify_jwt = false
-
-[functions.levav-webhook]
-verify_jwt = false
-
 [functions.ratzon-billing]
 verify_jwt = false
 
 [functions.ratzon-webhook]
+verify_jwt = false
+
+[functions.dev-delete-account]
+# Temporary testing tool; the handler authenticates the caller and deletes only that user.
 verify_jwt = false

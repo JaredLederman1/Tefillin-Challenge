@@ -1,3 +1,4 @@
+import { isRequiredWrapDay } from './calendar.ts';
 export const money = (cents: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(cents / 100);
 export function dateKey(date = new Date(), timeZone = Intl.DateTimeFormat().resolvedOptions().timeZone): string {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(date);
@@ -14,7 +15,7 @@ export function streak(keys: string[], today: string) {
   if (!checked.has(today)) cursor.setUTCDate(cursor.getUTCDate() - 1);
   for (let i = 0; i < 3700; i++) {
     const key = cursor.toISOString().slice(0, 10);
-    if (!isShabbat(key)) { if (!checked.has(key)) break; count++; }
+    if (isRequiredWrapDay(key)) { if (!checked.has(key)) break; count++; }
     cursor.setUTCDate(cursor.getUTCDate() - 1);
   }
   return count;
@@ -22,12 +23,12 @@ export function streak(keys: string[], today: string) {
 export function parseContribution(value: string) {
   if (!/^\d+(\.\d{1,2})?$/.test(value.trim())) throw new Error('Enter a dollar amount with up to two decimal places.');
   const cents = Math.round(Number(value) * 100);
-  if (!Number.isSafeInteger(cents) || cents < 500 || cents > 100000) throw new Error('Choose an amount between $5 and $1,000.');
+  if (!Number.isSafeInteger(cents) || cents < 180 || cents > 1800) throw new Error('Choose an amount between $1.80 and $18.');
   return cents;
 }
 // Largest-remainder allocation: integer cents, deterministic, and no money lost to rounding.
 export function allocatePool(entries: { id: string; cents: number; completed: boolean }[]) {
-  if (new Set(entries.map(e => e.id)).size !== entries.length || entries.some(e => !Number.isSafeInteger(e.cents) || e.cents < 500)) throw new Error('Invalid contribution entries');
+  if (new Set(entries.map(e => e.id)).size !== entries.length || entries.some(e => !Number.isSafeInteger(e.cents) || e.cents < 100)) throw new Error('Invalid contribution entries');
   const winners = entries.filter(e => e.completed);
   const forfeited = entries.filter(e => !e.completed).reduce((sum, e) => sum + e.cents, 0);
   const totalWeight = winners.reduce((sum, e) => sum + e.cents, 0);
@@ -41,7 +42,7 @@ export function allocatePool(entries: { id: string; cents: number; completed: bo
 
 // Total credits (principal and reward) after fees, matching settle_net_month.
 export function allocateNetPool(entries: { id: string; cents: number; completed: boolean }[], feeCents: number) {
-  if (!Number.isSafeInteger(feeCents) || feeCents < 0 || new Set(entries.map(e => e.id)).size !== entries.length || entries.some(e => !Number.isSafeInteger(e.cents) || e.cents < 500)) throw new Error('Invalid pool');
+  if (!Number.isSafeInteger(feeCents) || feeCents < 0 || new Set(entries.map(e => e.id)).size !== entries.length || entries.some(e => !Number.isSafeInteger(e.cents) || e.cents < 100)) throw new Error('Invalid pool');
   const gross = entries.reduce((n, e) => n + BigInt(e.cents), 0n);
   const net = gross - BigInt(feeCents);
   if (net < 0n || net > BigInt(Number.MAX_SAFE_INTEGER)) throw new Error('Invalid net pool');

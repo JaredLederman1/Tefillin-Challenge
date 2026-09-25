@@ -1,0 +1,6 @@
+---
+description: Ratzon UI copy preference — no heading/subtitle pairings
+alwaysApply: true
+---
+
+Follow the platform-wide design preferences in AGENTS.md. Never introduce a large title with smaller explanatory or motivational subtext beneath it. Use concise labels and direct controls; necessary explanations are standalone notices.

@@ -1,11 +1,23 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, Image, Platform, useWindowDimensions, KeyboardAvoidingView, Switch, AppState, Animated, Easing, AccessibilityInfo } from 'react-native';
+import { ContributionSetup } from './src/ContributionSetup';
+import { CharitySetup,CharityChoice } from './src/CharitySetup';
+import { hasPaidAccess,chargeWithStripeFeeCovered } from './src/contribution';
+import { FINANCIAL_FEATURES_ENABLED } from './src/features';
+import { WelcomeReveal } from './src/WelcomeReveal';
+import { Onboarding } from './src/OnboardingFlow';
+import { OnboardingValues, MemberDetails, CommunityOption, parseBirthday, birthdayForInput, tefillinGoalProgress, formatUsPhone, phoneDigits } from './src/onboarding-data';
+import { wrapExemption, isRequiredWrapDay, canPostWrap, commentWordCount, isCholHamoed } from './src/calendar';
+import { WelcomeBrand } from './src/WelcomeBrand';
+import { CommunityAdmin } from './src/CommunityAdmin';
+import { searchUniversities } from './src/universities';
+import { searchCommunityCities } from './src/community-locations';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { View, Text, StyleSheet, ScrollView, Pressable, TextInput, Modal, Image, Platform, useWindowDimensions, KeyboardAvoidingView, AppState, Animated, Easing, AccessibilityInfo, Linking } from 'react-native';
 import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
 import { StatusBar } from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import * as AppleAuthentication from 'expo-apple-authentication';
 import { requireOptionalNativeModule } from 'expo';
-import Svg, { Circle } from 'react-native-svg';
 import * as ImagePicker from 'expo-image-picker';
 import { ImageManipulator, SaveFormat } from 'expo-image-manipulator';
 import AsyncStorage from '@react-native-async-storage/async-storage';
@@ -13,75 +25,161 @@ import { subscribeContribution, billingAction, paymentsLive } from './src/paymen
 import { supabase, uploadCheckin } from './src/supabase';
 import { dateKey, isShabbat, monthDays, money, parseContribution, streak } from './src/challenge';
 
-const C = { bg: '#000000', card: '#101114', raised: '#191B20', line: '#26282F', text: '#FFFFFF', muted: '#9398A4', dim: '#656B77', gold: '#2478FF', green: '#2478FF' };
-type Tab = 'Today' | 'Community' | 'Challenge' | 'Wallet' | 'You';
+const THEME = { bg: '#EDF4FF', card: '#FFFFFF', raised: '#E4EEFC', line: '#CCD9EB', text: '#062B60', muted: '#516987', dim: '#7B8DA5', gold: '#2478FF', green: '#2478FF' };
+let C = THEME;
+const DISPLAY_FONT = Platform.select({ ios: 'AvenirNextCondensed-Heavy', android: 'sans-serif-condensed', default: 'Arial Rounded MT Bold' });
+type Tab = 'Today' | 'Community' | 'Account';
 type IconName = React.ComponentProps<typeof Ionicons>['name'];
 type Checkin = { date: string; uri?: string; caption?: string; shared?: boolean };
 type Transaction = { id: string; title: string; cents: number; date: string };
 type Demo = { name: string; contribution: number; checks: Checkin[]; balance: number; transactions: Transaction[]; reminder: boolean };
-type Post = { id: string; name: string; caption: string; date: string; uri?: string; initials: string; color: string };
-const tabs: { name: Tab; icon: IconName }[] = [{ name: 'Today', icon: 'sunny-outline' }, { name: 'Community', icon: 'people-outline' }, { name: 'Challenge', icon: 'trophy-outline' }, { name: 'Wallet', icon: 'wallet-outline' }, { name: 'You', icon: 'person-outline' }];
+type Post = { id: string; userId?:string; name: string; caption: string; date: string; createdAt?: string; likes?: number; uri?: string; asset?: number; initials: string; color: string };
+const tabs: { name: Tab; icon: IconName }[] = [{ name: 'Community', icon: 'people-outline' }, { name: 'Today', icon: 'sunny-outline' }, { name: 'Account', icon: 'person-outline' }];
 const demoKey = 'tefillin-demo-v1';
 function initialDemo(): Demo {
   const today = dateKey();
-  return { name: 'Jared', contribution: 1800, checks: monthDays(today).filter(d => d < today && !isShabbat(d)).map(date => ({ date })), balance: 8450, transactions: [
+  return { name: 'Jared', contribution: 180, checks: monthDays(today).filter(d => d < today && isRequiredWrapDay(d)).map(date => ({ date })), balance: 8450, transactions: [
     { id: 'one', title: 'August challenge reward', cents: 2460, date: '2026-08-31' },
     { id: 'two', title: 'July challenge reward', cents: 1990, date: '2026-07-31' },
     { id: 'three', title: 'June challenge reward', cents: 4000, date: '2026-06-30' },
   ], reminder: true };
 }
 function Icon({ name, size = 22, color = C.muted }: { name: IconName; size?: number; color?: string }) { return <Ionicons name={name} size={size} color={color}/>; }
-function Button({ label, onPress, secondary = false, icon, disabled = false }: { label: string; onPress: () => void; secondary?: boolean; icon?: IconName; disabled?: boolean }) {
-  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, secondary && s.secondary, { opacity: disabled ? .4 : pressed ? .75 : 1 }]}>{icon && <Icon name={icon} color={secondary ? C.text : C.text} size={19}/>}<Text style={[s.buttonText, secondary && { color: C.text }]}>{label}</Text></Pressable>;
+function Button({ label, onPress, secondary = false, icon, disabled = false, fontSize = 16, authOption = false, nav = false, disabledTextColor }: { label: string; onPress: () => void; secondary?: boolean; icon?: IconName; disabled?: boolean; fontSize?: number; authOption?: boolean; nav?:boolean; disabledTextColor?:string }) {
+  return <Pressable accessibilityRole="button" accessibilityLabel={label} disabled={disabled} onPress={onPress} style={({ pressed }) => [s.button, nav && {backgroundColor:C.text}, secondary && s.secondary, secondary && {backgroundColor:C.raised,borderColor:C.line}, authOption && s.authOption, { opacity: disabled ? .4 : pressed ? .75 : 1 }]}>{icon && <Icon name={icon} color={C.text} size={19}/>}<Text style={[s.buttonText, {fontSize}, secondary && { color: C.text },disabled&&disabledTextColor&&{color:disabledTextColor}]}>{label}</Text></Pressable>;
 }
 function Tag({ label, color = C.green }: { label: string; color?: string }) { return <View style={[s.tag, { backgroundColor: `${color}14` }]}><View style={[s.dot, { backgroundColor: color }]}/><Text style={[s.tagText, { color }]}>{label}</Text></View>; }
-function Section({ title, link, onPress }: { title: string; link?: string; onPress?: () => void }) { return <View style={s.sectionHead}><Text style={s.sectionTitle}>{title}</Text>{link && <Pressable onPress={onPress} accessibilityRole="button"><Text style={s.textLink}>{link} <Text style={{ fontSize: 17 }}>↗</Text></Text></Pressable>}</View>; }
-function Ring({ count, total }: { count: number; total: number }) {
-  const size = 142, r = 62, circumference = 2 * Math.PI * r;
-  return <View style={{ width: size, height: size, alignItems: 'center', justifyContent: 'center' }}><Svg width={size} height={size} style={StyleSheet.absoluteFill}><Circle cx="71" cy="71" r={r} stroke="#22252C" strokeWidth="7" fill="none"/><Circle cx="71" cy="71" r={r} stroke={C.green} strokeWidth="7" fill="none" strokeLinecap="round" strokeDasharray={`${circumference * Math.min(count / total, 1)} ${circumference}`} transform="rotate(-90 71 71)"/></Svg><Text style={{ color: C.text, fontSize: 37, fontWeight: '500', letterSpacing: -2 }}>{count}<Text style={{ color: C.dim, fontSize: 19, letterSpacing: 0 }}> / {total}</Text></Text><Text style={[s.caption, { marginTop: 3 }]}>days wrapped</Text></View>;
+function Section({ title, link, onPress }: { title: string; link?: string; onPress?: () => void }) { return <View style={s.sectionHead}><Text style={s.sectionTitle}>{title}</Text>{link && <Pressable onPress={onPress} accessibilityRole="button"><Text style={s.textLink}>{link} <Text style={{ includeFontPadding:false,textAlignVertical:'center',fontSize: 17 }}>↗</Text></Text></Pressable>}</View>; }
+function BrandLogo({ size = 64, onReady }: { size?: number; onReady?:()=>void }) {
+  return <Image source={require('./assets/media/logo-trimmed.png')} fadeDuration={0} onLoadEnd={onReady} accessibilityLabel="Ratzon" style={{ width: size, height: size }} resizeMode="contain"/>;
 }
-function BrandLogo({ size = 64 }: { size?: number }) {
-  return <Image source={require('./assets/brand.png')} accessibilityLabel="Ratzon" style={{ width: size, height: size }} resizeMode="contain"/>;
-}
-function PageTransition({ children }: { children: React.ReactNode }) {
-  const progress = useRef(new Animated.Value(1)).current;
+function PageTransition({ children, animate=true, fadeOnly=false, duration=240 }: { children: React.ReactNode; animate?:boolean; fadeOnly?:boolean; duration?:number }) {
+  const animateOnMount=useRef(animate).current;
+  const progress = useRef(new Animated.Value(animate ? 0 : 1)).current;
   useEffect(() => {
     let mounted = true;
+    if(!animateOnMount)return;
     AccessibilityInfo.isReduceMotionEnabled().then(reduced => {
-      if (!mounted || reduced) return;
-      progress.setValue(0);
-      Animated.timing(progress, { toValue: 1, duration: 200, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
-    }).catch(() => {});
+      if (!mounted) return;
+      if (reduced) { progress.setValue(1); return; }
+      Animated.timing(progress, { toValue: 1, duration, easing: Easing.out(Easing.cubic), useNativeDriver: true }).start();
+    }).catch(() => { progress.setValue(1); });
     return () => { mounted = false; progress.stopAnimation(); };
-  }, [progress]);
-  return <Animated.View style={{ flex: 1, opacity: progress, transform: [{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [5, 0] }) }] }}>{children}</Animated.View>;
+  }, [progress,animateOnMount,duration]);
+  return <Animated.View style={{ flex: 1, opacity: progress, ...(fadeOnly?{}:{transform:[{ translateY: progress.interpolate({ inputRange: [0, 1], outputRange: [5, 0] }) }]}) }}>{children}</Animated.View>;
 }
 function AppContent() {
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
+  // Warm the bundled images without blocking authentication or onboarding.
+  useEffect(()=>{
+    const sources=[require('./assets/media/logo-trimmed.png'),require('./assets/media/word-mark-without-r-trimmed.png'),require('./assets/media/today-jerusalem-background-v2.png'),require('./assets/media/community-tel-aviv-background.png'),require('./assets/media/account-masada-background.png')];
+    if (Platform.OS !== 'web') sources.forEach(source=>{void Image.prefetch(Image.resolveAssetSource(source).uri).catch(()=>false);});
+  },[]);
+  const [mainAssetsReady,setMainAssetsReady]=useState(false);
+  const mainAssetsLoaded=useRef(new Set<string>());
+  const readinessCover=useRef(new Animated.Value(1)).current;
+  const markMainAsset=(key:string)=>{
+    mainAssetsLoaded.current.add(key);
+    if(['jerusalem','tel-aviv','masada','today-mark'].every(asset=>mainAssetsLoaded.current.has(asset)))setMainAssetsReady(true);
+  };
+  useEffect(()=>{
+    if(!mainAssetsReady)return;
+    let frame=requestAnimationFrame(()=>{
+      Animated.timing(readinessCover,{toValue:0,duration:180,useNativeDriver:true}).start();
+    });
+    return ()=>cancelAnimationFrame(frame);
+  },[mainAssetsReady,readinessCover]);
   const [entered, setEntered] = useState(false);
   const [appleAvailable, setAppleAvailable] = useState(false);
   useEffect(() => { AppleAuthentication.isAvailableAsync().then(setAppleAvailable).catch(() => {}); }, []);
   const [tab, setTab] = useState<Tab>('Today');
+  const swipeStart=useRef<{x:number;y:number;horizontal:boolean|null}|null>(null);
+  const pagerPosition=useRef(new Animated.Value(1)).current;
+  const paging=useRef(false);
+  const [navigationHeight, setNavigationHeight] = useState(98);
   const [demo, setDemo] = useState<Demo>(initialDemo);
   const [hydrated, setHydrated] = useState(false);
   const [today, setToday] = useState(dateKey());
   const [user, setUser] = useState<any>(null);
   const [profile, setProfile] = useState<any>(null);
+  const [memberDetails,setMemberDetails]=useState<MemberDetails|null>(null);
+  const [homeLaidOut,setHomeLaidOut]=useState(false);
+  const [welcomeReveal,setWelcomeReveal] = useState(false);
+  const [welcomePreparing,setWelcomePreparing] = useState(false);
+  const [onboardingState,setOnboardingState] = useState<'loading'|'needed'|'complete'|'error'>('loading');
   const [liveChecks, setLiveChecks] = useState<Checkin[]>([]);
   const [liveBalance, setLiveBalance] = useState(0);
   const [liveTransactions, setLiveTransactions] = useState<Transaction[]>([]);
   const [livePosts, setLivePosts] = useState<Post[]>([]);
-  const [sheet, setSheet] = useState<'photo' | 'contribution' | 'transfer' | 'auth' | 'rules' | null>(null);
+  const [communityPosts,setCommunityPosts]=useState<Post[]>([]);
+  const [communities,setCommunities]=useState<CommunityOption[]>([]);
+  const [myCommunityId,setMyCommunityId]=useState<string|null>(null);
+  const [communityView,setCommunityView]=useState<'global'|'mine'>('global');
+  const [communityCode,setCommunityCode]=useState('');
+  const [newCommunityName,setNewCommunityName]=useState('');
+  const [newCommunityLocation,setNewCommunityLocation]=useState('');
+  const [newCommunitySchool,setNewCommunitySchool]=useState('');
+  const [communitySchoolChosen,setCommunitySchoolChosen]=useState(false);
+  const [communityLocationChosen,setCommunityLocationChosen]=useState(false);
+  const [createdCommunityCode,setCreatedCommunityCode]=useState<string|null>(null);
+  const [sheet, setSheet] = useState<'photo' | 'contribution' | 'transfer' | 'auth' | 'rules' | 'delete-account' | 'tefillin-goal' | 'post-menu' | 'wallet-activity' | 'reports' | 'community' | 'community-create' | 'community-join' | null>(null);
+  useEffect(()=>{
+    if(!FINANCIAL_FEATURES_ENABLED&&sheet&&['contribution','transfer','tefillin-goal','wallet-activity'].includes(sheet))setSheet(null);
+  },[sheet]);
+  const [editingProfileField,setEditingProfileField]=useState<'name'|'birthday'|'school'|'phone'|null>(null);
+  const [profileEditValue,setProfileEditValue]=useState('');
+  const [exemptionInfoOpen,setExemptionInfoOpen]=useState(false);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
-  const [recurringConsent, setRecurringConsent] = useState(false);
+  const [billingState,setBillingState]=useState<'loading'|'ready'|'error'>('loading');
+  const [billingError,setBillingError]=useState('');
+  const [paymentTestBypass,setPaymentTestBypass]=useState(false);
+  const [returnToOnboarding,setReturnToOnboarding]=useState(false);
+  const [goalEnabled,setGoalEnabled]=useState(false);
+  C=THEME;
+  s=makeStyles();
+  const pendingWelcome=useRef(false);
   const [membership, setMembership] = useState<any>(null);
+  const tabIndex=(name:Tab)=>tabs.findIndex(item=>item.name===name);
+  const tabSlideStyle=(name:Tab)=>({transform:[{translateX:Animated.add(Animated.multiply(pagerPosition,-width),tabIndex(name)*width)}]});
+  useLayoutEffect(()=>{if(!paging.current)pagerPosition.setValue(tabIndex(tab));},[tab,width,pagerPosition]);
+  const canSwipe=(dx:number)=>tab==='Today'||(tab==='Community'&&dx<0)||(tab==='Account'&&dx>0);
+  const handleMainSwipeMove=(moveX:number,moveY:number)=>{
+    const start=swipeStart.current;if(!start)return;
+    const dx=moveX-start.x,dy=moveY-start.y;
+    if(start.horizontal===null&&Math.max(Math.abs(dx),Math.abs(dy))>=10)start.horizontal=Math.abs(dx)>Math.abs(dy)*1.2;
+    if(start.horizontal!==true||!canSwipe(dx))return;
+    pagerPosition.setValue(tabIndex(tab)-Math.max(-width*.92,Math.min(width*.92,dx))/width);
+  };
+  const handleMainSwipe=(endX:number,endY:number)=>{
+    const start=swipeStart.current;swipeStart.current=null;
+    if(!start)return;
+    const dx=endX-start.x,dy=endY-start.y;
+    if(start.horizontal!==true)return;
+    const valid=start.horizontal===true&&Math.abs(dx)>=70&&Math.abs(dx)>Math.abs(dy)*1.35&&canSwipe(dx);
+    const next=valid?(tab==='Today'?(dx>0?'Community':'Account'):tab==='Community'?'Today':'Today'):null;
+    const destination=next?tabIndex(next):tabIndex(tab);
+    paging.current=true;
+    Animated.timing(pagerPosition,{toValue:destination,duration:180,useNativeDriver:true,easing:Easing.out(Easing.cubic)}).start(({finished})=>{
+      if(!finished)return;
+      if(next)setTab(next);
+      paging.current=false;
+    });
+  };
+  const selectTab=(next:Tab)=>{
+    swipeStart.current=null;
+    pagerPosition.stopAnimation();
+    paging.current=false;
+    pagerPosition.setValue(tabIndex(next));
+    setTab(next);
+  };
   const [enrolledMonths, setEnrolledMonths] = useState<string[]>([]);
-  const [recipients, setRecipients] = useState<{id:string;name:string}[]>([]);
+  const [recipients, setRecipients] = useState<CharityChoice[]>([]);
+  const [preferredCauseId,setPreferredCauseId]=useState<string|null>(null);
   const [photo, setPhoto] = useState<string | null>(null);
   const [caption, setCaption] = useState('');
-  const [sharePhoto, setSharePhoto] = useState(true);
-  const [amount, setAmount] = useState('18');
+  const [amount, setAmount] = useState('1.80');
+  const [coversStripeFee,setCoversStripeFee]=useState(false);
   const donationAttempt = useRef<{id:string;cause:string;cents:number}|null>(null);
   const [donations, setDonations] = useState<{id:string;cause_name:string;amount_cents:number;status:string;fulfillment_reference?:string}[]>([]);
   const [cause, setCause] = useState('');
@@ -89,20 +187,87 @@ function AppContent() {
   const [password, setPassword] = useState('');
   const [name, setName] = useState('');
   const [signup, setSignup] = useState(true);
+  const [signupAgeConfirmed,setSignupAgeConfirmed]=useState(false);
+  const authMotion = useRef(new Animated.Value(0)).current;
+  const [reduceMotion,setReduceMotion] = useState(false);
+  const [homeSloganVisible,setHomeSloganVisible] = useState(false);
+  const homeSloganOpacity = useRef(new Animated.Value(0)).current;
+  const homeActionsOpacity = useRef(new Animated.Value(0)).current;
+  const closingAuth = useRef(false);
+  useEffect(()=>{
+    let active=true;
+    AccessibilityInfo.isReduceMotionEnabled().then(value=>{if(active)setReduceMotion(value);});
+    const subscription=AccessibilityInfo.addEventListener('reduceMotionChanged',setReduceMotion);
+    return ()=>{active=false;subscription.remove();};
+  },[]);
+  useEffect(()=>{
+    if(sheet!=='auth')return;
+    closingAuth.current=false;
+    authMotion.setValue(reduceMotion?1:0);
+    Animated.timing(authMotion,{toValue:1,duration:reduceMotion?0:240,easing:Easing.out(Easing.cubic),useNativeDriver:true}).start();
+    return ()=>authMotion.stopAnimation();
+  },[sheet,reduceMotion,authMotion]);
+  const closeSheet = () => {
+    if(busy||closingAuth.current)return;
+    if(sheet!=='auth'){setSheet(null);return;}
+    closingAuth.current=true;
+    Animated.timing(authMotion,{toValue:0,duration:reduceMotion?0:180,easing:Easing.in(Easing.cubic),useNativeDriver:true}).start(({finished})=>{
+      closingAuth.current=false;
+      if(finished){setSheet(null);setPassword('');setNotice('');}
+    });
+  };
+  const deleteOwnAccount = async () => {
+    if(!supabase||busy)return;
+    setBusy(true);setNotice('');
+    try {
+      const {data,error}=await supabase.functions.invoke('dev-delete-account',{body:{confirmation:'DELETE'}});
+      if(error){let message=error.message;try{const detail=await error.context.json();message=detail.error||detail.message||message;if(error.context.status===404||detail.code==='NOT_FOUND')message='Account deletion is not enabled yet. The dev endpoint still needs to be deployed.';}catch{}throw new Error(message);}
+      if(!data?.deleted)throw new Error(data?.error||'Account was not deleted.');
+      await supabase.auth.signOut({scope:'local'});
+      setUser(null);setProfile(null);setEntered(false);setSheet(null);setTab('Today');setEmail('');setPassword('');setWelcomeReveal(false);
+      setNotice('Account deleted. You can sign up again.');
+    } catch(error:any){setNotice(error.message||'Could not delete account.');} finally {setBusy(false);}
+  };
+  const openAuth = (createAccount: boolean) => {
+    setSignup(createAccount);setSignupAgeConfirmed(false);setPassword('');setNotice('');setSheet('auth');
+  };
   const [liked, setLiked] = useState<string[]>([]);
-  const [feedFilter, setFeedFilter] = useState<'Everyone' | 'My wraps'>('Everyone');
+  const [hiddenPostIds,setHiddenPostIds]=useState<string[]>([]);
+  const [blockedUserIds,setBlockedUserIds]=useState<string[]>([]);
+  const [menuPost,setMenuPost]=useState<Post|null>(null);
+  const [isAdmin,setIsAdmin]=useState(false);
+  const [reports,setReports]=useState<{id:string;checkinId:string;reason:string;createdAt:string;caption:string;author:string;imageUrl:string|null}[]>([]);
+  const pendingLikeTaps=useRef(new Map<string,ReturnType<typeof setTimeout>>());
+  const toggleLike=(id:string)=>setLiked(current=>current.includes(id)?current.filter(value=>value!==id):[...current,id]);
+  const handlePostTap=(id:string)=>{
+    const pending=pendingLikeTaps.current.get(id);
+    if(pending){clearTimeout(pending);pendingLikeTaps.current.delete(id);toggleLike(id);return;}
+    pendingLikeTaps.current.set(id,setTimeout(()=>pendingLikeTaps.current.delete(id),260));
+  };
   const isDemo = !user;
   const checks = isDemo ? demo.checks : liveChecks;
   const balance = isDemo ? demo.balance : liveBalance;
-  const contribution = isDemo ? demo.contribution : (membership?.amount_cents || profile?.contribution_cents || 1800);
+  const contribution = isDemo ? demo.contribution : (membership?.contribution_cents || membership?.amount_cents || profile?.contribution_cents || 180);
+  const communitySchoolSuggestions=communitySchoolChosen?[]:searchUniversities(newCommunitySchool);
+  const communityLocationSuggestions=communityLocationChosen?[]:searchCommunityCities(newCommunityLocation);
   const firstName = isDemo ? demo.name : (profile?.display_name || user?.user_metadata?.display_name || 'Friend');
   const timeZone = profile?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone;
   const days = monthDays(today);
-  const required = days.filter(d => !isShabbat(d));
-  const monthChecks = checks.filter(c => c.date.startsWith(today.slice(0, 7)) && !isShabbat(c.date));
-  const completed = checks.some(c => c.date === today);
-  const rest = isShabbat(today);
-  const monthName = new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { month: 'long' });
+  const required = days.filter(isRequiredWrapDay);
+  const todaysWrap = checks.find(c => c.date === today);
+  const completed = Boolean(todaysWrap);
+  const exemption = wrapExemption(today);
+  const postingBlocked = !canPostWrap(today);
+  const cholHamoed = isCholHamoed(today);
+  const exemptionExplanation=cholHamoed
+    ? 'It is Chol Hamoed. Wrapping is optional today; follow your custom, and your streak is protected either way.'
+    : exemption==='Shabbat'
+      ? 'It is Shabbat. Tefillin are not worn on Shabbat, so no wrap is needed today.'
+      : exemption==='Rosh Hashanah'
+        ? 'It is Rosh Hashanah. Tefillin are not worn on Rosh Hashanah, so no wrap is needed today.'
+        : `It is ${exemption}. Tefillin are not worn on this day, so no wrap is needed today.`;
+  const captionWords = commentWordCount(caption);
+  const cameraOpening = useRef(false);
   const streakCount = streak(checks.map(c => c.date), today);
   const missed = required.some(d => d < today && !checks.some(c => c.date === d));
   const transactions = isDemo ? demo.transactions : liveTransactions;
@@ -111,52 +276,189 @@ function AppContent() {
   useEffect(() => { if (hydrated) AsyncStorage.setItem(demoKey, JSON.stringify(demo)).catch(() => setNotice('Your device could not save this demo session.')); }, [demo, hydrated]);
   useEffect(() => { const update = () => setToday(dateKey(new Date(), timeZone)); update(); const timer = setInterval(update, 60000); const sub = AppState.addEventListener('change', update); return () => { clearInterval(timer); sub.remove(); }; }, [timeZone]);
   useEffect(() => { if (!supabase) return; supabase.auth.getSession().then(({ data }) => setUser(data.session?.user || null)); const { data } = supabase.auth.onAuthStateChange((_event, session) => setUser(session?.user || null)); return () => data.subscription.unsubscribe(); }, []);
-  useEffect(() => { if (user) refreshLive().catch(e => setNotice(e.message)); else { setProfile(null); setLiveChecks([]); setLiveBalance(0); setLivePosts([]); } }, [user?.id, tab]);
+  useEffect(() => { if (user) refreshLive().catch(e => setNotice(e.message)); else { setProfile(null); setLiveChecks([]); setLiveBalance(0); setLivePosts([]); setBlockedUserIds([]); } }, [user?.id]);
+  useEffect(()=>{
+    if(!supabase||!user){setCommunities([]);setMyCommunityId(null);setCommunityPosts([]);setCommunityView('global');return;}
+    let active=true;
+    supabase.from('communities').select('id,name').eq('active',true).order('name').then(({data,error})=>{
+      if(active){if(error)setNotice('Could not load communities. Please try again.');else setCommunities(data||[]);}
+    });
+    return ()=>{active=false;};
+  },[user?.id]);
+  useEffect(() => {
+    let active=true;
+    setOnboardingState('loading');setBillingState('loading');setMemberDetails(null);setMembership(null);setEnrolledMonths([]);setPreferredCauseId(null);setPaymentTestBypass(false);setReturnToOnboarding(false);setGoalEnabled(false);
+    if(user) AsyncStorage.getItem(`tefillin-goal-${user.id}`).then(value=>setGoalEnabled(value==='true')).catch(()=>{});
+    if(user&&supabase) supabase.from('member_onboarding').select('full_name,gender,phone,school,birthday,tradition,completed_at').eq('user_id',user.id).maybeSingle().then(({data,error})=>{
+      if(active){setMemberDetails(data as MemberDetails|null);setOnboardingState(error?'error':data?'complete':'needed');}
+    });
+    return ()=>{active=false;};
+  },[user?.id]);
+  async function finishOnboarding(values:OnboardingValues) {
+    if(!supabase||!user)throw new Error('Please sign in again.');
+    pendingWelcome.current=true;
+    if(!FINANCIAL_FEATURES_ENABLED){
+      setHomeLaidOut(false);setWelcomePreparing(true);setWelcomeReveal(true);
+    }
+    try {
+    const {data,error}=await supabase.rpc('complete_onboarding_with_community_code',{p_full_name:values.fullName.trim(),p_gender:values.gender,p_phone:values.phone.trim(),p_school:values.school.trim()||null,p_birthday:parseBirthday(values.birthday),p_tradition:values.tradition,p_owns_tefillin:values.ownsTefillin,p_borrow_source:values.ownsTefillin?null:values.borrowSource,p_timezone:Intl.DateTimeFormat().resolvedOptions().timeZone,p_community_code:values.communityCode.trim()||null});
+    if(error)throw error;
+    setProfile((p:any)=>({...p,display_name:values.fullName.trim().split(/\s+/)[0],timezone:p?.timezone || Intl.DateTimeFormat().resolvedOptions().timeZone}));
+    setMemberDetails({full_name:values.fullName.trim(),gender:values.gender,phone:values.phone.trim(),school:values.school.trim()||null,birthday:parseBirthday(values.birthday),tradition:values.tradition!,tefillin_goal_enabled:false});
+    setMyCommunityId(data||null);setCommunityView('global');
+    void refreshLive().catch(error=>setNotice(error.message||'Could not refresh the feed.'));
+    setSheet(null);setReturnToOnboarding(false);setOnboardingState('complete');setTab('Today');
+    if(!FINANCIAL_FEATURES_ENABLED){
+      pendingWelcome.current=false;
+    }
+    } catch(error) {setWelcomeReveal(false);throw error;}
+  }
   useEffect(() => { if (!notice) return; const timer = setTimeout(() => setNotice(''), 7000); return () => clearTimeout(timer); }, [notice]);
+  async function refreshBilling() {
+    if(!FINANCIAL_FEATURES_ENABLED)return;
+    try {
+      const billing=await billingAction('status');
+      const months=(billing.enrollments||[]).map((e:any)=>e.month);
+      if(pendingWelcome.current&&hasPaidAccess(billing.membership,months,today)&&billing.preferredCauseId){
+        pendingWelcome.current=false;setHomeLaidOut(false);setWelcomePreparing(false);setWelcomeReveal(true);setTab('Today');
+      }
+      setMembership(billing.membership);setEnrolledMonths(months);setRecipients(billing.recipients||[]);setPreferredCauseId(billing.preferredCauseId||null);setDonations(billing.donations||[]);setBillingState('ready');setBillingError('');
+      if(billing.walletSyncPending)setNotice('Your payment is still syncing to your wallet. Reopen the app to check again.');
+      return billing;
+    } catch(e:any){setBillingState('error');setBillingError(e.message);throw e;}
+  }
+  const paidAccess=!FINANCIAL_FEATURES_ENABLED||paymentTestBypass||hasPaidAccess(membership,enrolledMonths,today);
   async function refreshLive() {
     if (!supabase || !user) return;
-    const [p, c, l, f] = await Promise.all([
+    await refreshBilling();
+    const [p, c, l, f, admin, membershipResult, communityFeedResult,blocks] = await Promise.all([
       supabase.from('profiles').select('*').eq('id', user.id).single(),
       supabase.from('checkins').select('*').eq('user_id', user.id).order('checkin_date', { ascending: false }),
-      supabase.from('ledger').select('*').eq('livemode', paymentsLive).eq('user_id', user.id).order('created_at', { ascending: false }),
+      FINANCIAL_FEATURES_ENABLED ? supabase.from('ledger').select('*').eq('livemode', paymentsLive).eq('user_id', user.id).order('created_at', { ascending: false }) : Promise.resolve({data:[],error:null}),
       supabase.from('checkins').select('*, profiles(display_name)').eq('shared', true).order('created_at', { ascending: false }).limit(30),
+      supabase.rpc('is_app_admin'),
+      supabase.from('community_memberships').select('community_id').eq('user_id',user.id).maybeSingle(),
+      supabase.rpc('my_community_feed'),
+      supabase.from('blocked_users').select('blocked_user_id').eq('blocker_id',user.id),
     ]);
-    for (const result of [p,c,l,f]) if (result.error) throw result.error;
-    const billing = await billingAction('status');
-    setMembership(billing.membership); setEnrolledMonths((billing.enrollments || []).map((e:any)=>e.month)); setRecipients(billing.recipients || []); setDonations(billing.donations || []);
+    // Show the reconciled wallet before unrelated feed/profile work or photo loading.
+    if(l.error)throw l.error;
+    setLiveBalance((l.data || []).reduce((sum, row) => sum + row.amount_cents, 0));
+    setLiveTransactions((l.data || []).map(row => ({ id: row.id, title: row.description, cents: row.amount_cents, date: row.created_at.slice(0, 10) })));
+    for (const result of [p,c,f,admin,membershipResult,communityFeedResult,blocks]) if (result.error) throw result.error;
+    setBlockedUserIds((blocks.data||[]).map(row=>row.blocked_user_id));
+    setMyCommunityId(membershipResult.data?.community_id||null);
+    setIsAdmin(admin.data===true);
     setProfile(p.data);
-    const paths = [...new Set([...(c.data || []), ...(f.data || [])].map(row => row.photo_path))];
+    const paths = [...new Set([...(c.data || []), ...(f.data || []), ...(communityFeedResult.data || [])].map(row => row.photo_path))];
     const urls = paths.length ? await supabase.storage.from('checkins').createSignedUrls(paths, 3600) : null;
     const byPath = new Map(urls?.data?.map(row => [row.path, row.signedUrl]) || []);
     setLiveChecks((c.data || []).map(row => ({ date: row.checkin_date, uri: byPath.get(row.photo_path) || undefined, caption: row.caption, shared: row.shared })));
-    setLiveBalance((l.data || []).reduce((sum, row) => sum + row.amount_cents, 0));
-    setLiveTransactions((l.data || []).map(row => ({ id: row.id, title: row.description, cents: row.amount_cents, date: row.created_at.slice(0, 10) })));
-    setLivePosts((f.data || []).map(row => ({ id: row.id, name: row.profiles?.display_name || 'Community member', caption: row.caption, date: row.checkin_date, uri: byPath.get(row.photo_path) || undefined, initials: (row.profiles?.display_name || 'M').slice(0, 2).toUpperCase(), color: C.green })));
+    setLivePosts((f.data || []).map(row => ({ id: row.id, userId:row.user_id,name: row.profiles?.display_name || 'Community member', caption: row.caption, date: row.checkin_date, createdAt: row.created_at, uri: byPath.get(row.photo_path) || undefined, initials: (row.profiles?.display_name || 'M').slice(0, 2).toUpperCase(), color: C.green })));
+    setCommunityPosts((communityFeedResult.data || []).map((row:{id:string;user_id:string;display_name:string|null;caption:string;checkin_date:string;created_at:string;photo_path:string})=>({id:row.id,userId:row.user_id,name:row.display_name||'Community member',caption:row.caption,date:row.checkin_date,createdAt:row.created_at,uri:byPath.get(row.photo_path)||undefined,initials:(row.display_name||'M').slice(0,2).toUpperCase(),color:C.green})));
   }
-  async function pickPhoto(camera: boolean) {
+  // Return from Apple Pay or foregrounding the app automatically rechecks
+  // Stripe and backfills any payment whose webhook arrived late.
+  useEffect(()=>{
+    if(!user)return;
+    const subscription=AppState.addEventListener('change',state=>{
+      if(state==='active')void refreshLive().catch(()=>{});
+    });
+    return ()=>subscription.remove();
+  },[user?.id]);
+  const reportPost=async(post:Post)=>{
+    if(isDemo){
+      setHiddenPostIds(current=>current.includes(post.id)?current:[...current,post.id]);
+      setNotice('Thanks. This post is hidden from your feed and is being reviewed by Ratzon.');
+      return;
+    }
+    if(!supabase){setNotice('Sign in to report a post.');return;}
     try {
-      const permission = camera ? await ImagePicker.requestCameraPermissionsAsync() : await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) { setNotice(`Allow ${camera ? 'camera' : 'photo library'} access to add your daily wrap.`); return; }
-      const options: ImagePicker.ImagePickerOptions = { mediaTypes: ['images'], allowsEditing: true, aspect: [4, 5], quality: .75, base64: false };
-      const result = camera ? await ImagePicker.launchCameraAsync(options) : await ImagePicker.launchImageLibraryAsync(options);
+      const {error}=await supabase.rpc('report_checkin',{p_checkin_id:post.id,p_reason:''});
+      if(error)throw error;
+      setHiddenPostIds(current=>current.includes(post.id)?current:[...current,post.id]);
+      setNotice('Thanks. This post is hidden from your feed and is being reviewed by Ratzon.');
+    }
+    catch(error:any){setNotice(error.message||'Could not report this post.');}
+  };
+  const loadReports=async()=>{
+    if(!supabase)return;
+    setBusy(true);
+    try { const {data,error}=await supabase.functions.invoke('moderate-content',{body:{action:'list-reports'}}); if(error)throw error; setReports(data?.reports||[]); setSheet('reports'); }
+    catch(error:any){setNotice(error.message||'Could not load reports.');} finally {setBusy(false);}
+  };
+  const moderateReport=async(report:{id:string;checkinId:string},action:'delete-post'|'dismissed')=>{
+    if(!supabase||busy)return;
+    setBusy(true);
+    try {
+      if(action==='delete-post'){
+        const {error}=await supabase.functions.invoke('moderate-content',{body:{action:'delete-post',checkinId:report.checkinId}});if(error)throw error;
+      } else {
+        const {error}=await supabase.functions.invoke('moderate-content',{body:{action:'resolve-report',reportId:report.id,status:'dismissed'}});if(error)throw error;
+      }
+      setReports(current=>current.filter(item=>item.id!==report.id));
+      if(action==='delete-post')await refreshLive();
+    } catch(error:any){setNotice(error.message||'Could not update this report.');} finally {setBusy(false);}
+  };
+  const adminDeletePost=async(post:Post)=>{
+    if(!supabase||busy)return;
+    setBusy(true);
+    try {
+      const {error}=await supabase.functions.invoke('moderate-content',{body:{action:'delete-post',checkinId:post.id}});
+      if(error)throw error;
+      setHiddenPostIds(current=>[...current,post.id]);
+      setSheet(null);setMenuPost(null);
+      await refreshLive();
+      setNotice('Post deleted.');
+    } catch(error:any){setNotice(error.message||'Could not delete this post.');} finally {setBusy(false);}
+  };
+  const blockPostAuthor=async(post:Post)=>{
+    if(isDemo&&post.userId){
+      setBlockedUserIds(current=>current.includes(post.userId!)?current:[...current,post.userId!]);
+      setSheet(null);setMenuPost(null);setNotice(`${post.name} has been blocked.`);
+      return;
+    }
+    if(!supabase||!user||!post.userId||post.userId===user.id||busy)return;
+    setBusy(true);
+    try{
+      const {error}=await supabase.from('blocked_users').upsert({blocker_id:user.id,blocked_user_id:post.userId});
+      if(error)throw error;
+      setBlockedUserIds(current=>current.includes(post.userId!)?current:[...current,post.userId!]);
+      setSheet(null);setMenuPost(null);setNotice(`${post.name} has been blocked.`);
+    }catch(error:any){setNotice(error.message||'Could not block this user.');}finally{setBusy(false);}
+  };
+  async function takePhoto() {
+    if (busy || cameraOpening.current) return;
+    if (postingBlocked || completed) { setNotice(postingBlocked ? `${exemption} · No wrap required today.` : 'You have already posted today.'); return; }
+    if (Platform.OS === 'web') { setNotice('Open the iPhone or Android app to take your daily photo.'); return; }
+    cameraOpening.current = true;
+    setBusy(true);
+    try {
+      const permission = await ImagePicker.requestCameraPermissionsAsync();
+      if (!permission.granted) { setNotice('Allow camera access in Settings to take your daily wrap photo.'); return; }
+      const result = await ImagePicker.launchCameraAsync({ mediaTypes: ['images'], allowsEditing: false, quality: .8, base64: false });
       if (!result.canceled) {
         const asset = result.assets[0];
         const context = ImageManipulator.manipulate(asset.uri);
         context.resize(asset.width >= asset.height ? { width: isDemo ? 640 : 1200 } : { height: isDemo ? 800 : 1500 });
         const image = await context.renderAsync();
         const normalized = await image.saveAsync({ compress: .72, format: SaveFormat.JPEG, base64: true });
-        setPhoto(`data:image/jpeg;base64,${normalized.base64}`); setSheet('photo');
+        if (!normalized.base64) throw new Error('Could not prepare your photo. Please take it again.');
+        setPhoto(`data:image/jpeg;base64,${normalized.base64}`); setCaption(''); setSheet('photo');
       }
-    } catch (e: any) { setNotice(e.message || 'Could not open the camera. Try choosing a photo.'); }
+    } catch (e: any) { setNotice(e.message || 'Could not open the camera. Please try again.'); }
+    finally { cameraOpening.current = false; setBusy(false); }
   }
   async function postPhoto() {
     if (!photo || busy) return;
-    if (rest || completed) { setNotice(rest ? 'Shabbat is a rest day. No check-in needed.' : 'You have already wrapped today.'); return; }
+    if (postingBlocked || completed) { setNotice(postingBlocked ? `${exemption} · No wrap required today.` : 'You have already wrapped today.'); return; }
+    if (captionWords > 10) { setNotice('Keep your comment to 10 words or fewer.'); return; }
+    const postCaption=caption.trim()||`Day ${streak([...checks.map(c=>c.date),today],today)} of the streak`;
     setBusy(true);
     try {
       if (isDemo) {
-        setDemo(d => ({ ...d, checks: [...d.checks.filter(c => c.date !== today), { date: today, uri: photo, caption, shared: sharePhoto }].map(c => c.date < today.slice(0, 7) + '-01' ? { ...c, uri: undefined } : c) }));
-      } else { await uploadCheckin(user.id, photo, caption, sharePhoto); await refreshLive(); }
+        setDemo(d => ({ ...d, checks: [...d.checks.filter(c => c.date !== today), { date: today, uri: photo, caption:postCaption, shared: true }].map(c => c.date < today.slice(0, 7) + '-01' ? { ...c, uri: undefined } : c) }));
+      } else { await uploadCheckin(user.id, photo, postCaption, true); await refreshLive(); }
       setSheet(null); setPhoto(null); setCaption(''); setNotice(isDemo ? 'Demo wrap saved. One more day of showing up.' : 'Your wrap is posted. One more day of showing up.');
     } catch (e: any) { setNotice(e.message); } finally { setBusy(false); }
   }
@@ -166,8 +468,7 @@ function AppContent() {
       if (!isDemo) {
         if (busy) return;
         setBusy(true);
-        if (!recurringConsent) throw new Error('Accept monthly billing before subscribing.');
-        if (await subscribeContribution(cents)) { setSheet(null); setNotice(paymentsLive ? 'Payment submitted. Enrollment appears after server confirmation.' : 'Test subscription submitted. No real funds charged.'); await refreshLive(); }
+        if (await subscribeContribution(cents,coversStripeFee)) { setSheet(null); setNotice(paymentsLive ? 'Payment submitted. Enrollment appears after server confirmation.' : 'Test subscription submitted. No real funds charged.'); await refreshLive(); }
         return;
       }
       setDemo(d => ({ ...d, contribution: cents })); setSheet(null); setNotice('Demo contribution updated. No payment was taken.');
@@ -196,16 +497,18 @@ function AppContent() {
   }
   async function signInWithApple() {
     if (busy) return;
-    if (!appleAvailable) { setNotice('Apple signup is available in the iPhone app.'); return; }
+    if(signup&&!signupAgeConfirmed){setNotice('Confirm that you are at least 13 years old.');return;}
+    if (!appleAvailable) { setNotice('Apple sign-in is available in the iPhone app. Please use email on this device.'); return; }
     if (!supabase) { setNotice('Account signup is not connected yet.'); return; }
     setBusy(true);
     try {
       // Existing development clients may predate the optional Apple crypto dependency.
       // Never evaluate expo-crypto until its native module is present.
       if (!requireOptionalNativeModule('ExpoCrypto')) {
-        throw new Error('Apple sign-in needs an updated development build. Use email signup or Preview app for now.');
+        throw new Error('Apple sign-in needs an updated development build. Use email for now.');
       }
-      const Crypto = await import('expo-crypto');
+      // Keep dependencies in the main Metro bundle; evaluate only after the native check.
+      const Crypto = require('expo-crypto') as typeof import('expo-crypto');
       const nonce = Crypto.randomUUID();
       const hashedNonce = await Crypto.digestStringAsync(Crypto.CryptoDigestAlgorithm.SHA256, nonce);
       const credential = await AppleAuthentication.signInAsync({
@@ -214,107 +517,396 @@ function AppContent() {
       if (!credential.identityToken) throw new Error('Apple did not return a sign-in token.');
       const { error } = await supabase.auth.signInWithIdToken({ provider: 'apple', token: credential.identityToken, nonce });
       if (error) throw error;
-      setEntered(true);
+      setEntered(true); setSheet(null); setPassword('');
     } catch (error: any) {
-      if (error.code !== 'ERR_REQUEST_CANCELED') setNotice(error.message || 'Apple signup could not finish.');
+      if (error.code !== 'ERR_REQUEST_CANCELED') setNotice(error.message || 'Apple sign-in could not finish.');
     } finally { setBusy(false); }
   }
   async function authenticate() {
-    if (!supabase) { setNotice('Live signup needs the Supabase publishable key. You can explore the demo now.'); return; }
-    if (!email.includes('@') || password.length < 8 || (signup && !name.trim())) { setNotice('Enter your name, a valid email, and a password of at least 8 characters.'); return; }
+    if (busy) return;
+    if(signup&&!signupAgeConfirmed){setNotice('Confirm that you are at least 13 years old.');return;}
+    if (!supabase) { setNotice('Account access is temporarily unavailable. Please try again later.'); return; }
+    if (!email.trim().includes('@') || !password || (signup && (password.length < 8))) {
+      setNotice(signup ? 'Enter a valid email and a password of at least 8 characters.' : 'Enter your email and password.'); return;
+    }
     setBusy(true);
     try {
-      const { data, error } = signup ? await supabase.auth.signUp({ email: email.trim(), password, options: { data: { display_name: name.trim(), timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } } }) : await supabase.auth.signInWithPassword({ email: email.trim(), password });
+      const { data, error } = signup ? await supabase.auth.signUp({ email: email.trim(), password, options: { data: { display_name: 'Member', timezone: Intl.DateTimeFormat().resolvedOptions().timeZone } } }) : await supabase.auth.signInWithPassword({ email: email.trim(), password });
       if (error) throw error;
       setSheet(null); setPassword(''); setNotice(data.session ? 'Welcome to your daily practice.' : 'Check your email to confirm your account, then sign in.');
     } catch (e: any) { setNotice(e.message); } finally { setBusy(false); }
   }
-  const openContribution = () => { setRecurringConsent(false); setAmount(String(contribution / 100)); setSheet('contribution'); };
-  const openTransfer = () => { setCause(isDemo?'Jewish community fund':recipients.length===1?recipients[0].id:''); setSheet('transfer'); };
+  const openContribution = () => { setAmount(String(contribution / 100)); setCoversStripeFee(Boolean(membership?.covers_stripe_fee)); setSheet('contribution'); };
+  const openTransfer = () => { setCause(isDemo?'Jewish community fund':preferredCauseId&&recipients.some(item=>item.id===preferredCauseId)?preferredCauseId:recipients.length===1?recipients[0].id:''); setSheet('transfer'); };
   const localPosts: Post[] = checks.filter(c => c.uri && c.shared).map(c => ({ id: c.date, name: `${firstName} (you)`, caption: c.caption || 'Another day. Another connection.', date: c.date, uri: c.uri, initials: firstName.slice(0, 2).toUpperCase(), color: C.gold }));
-  const samplePosts: Post[] = [
-    { id: 'd1', name: 'David S.', initials: 'DS', color: '#B9CBA5', caption: 'A few quiet minutes before the day begins. Grateful for this community.', date: today },
-    { id: 'd2', name: 'Ari L.', initials: 'AL', color: '#D0B598', caption: 'Travel day, same commitment. Showing up wherever life takes me.', date: today },
-    { id: 'd3', name: 'Moshe K.', initials: 'MK', color: '#A7BAC4', caption: 'Small actions, every day. That’s where the change happens.', date: today },
+  const demoPosts: Post[] = [
+    {id:'demo-community-one',userId:'demo-daniel',name:'Daniel',caption:'Starting the morning with intention.',date:today,asset:require('./assets/media/community-demo-daniel-v2.png'),initials:'DA',color:'#2478FF',likes:12},
+    {id:'demo-community-two',userId:'demo-aaron',name:'Aaron',caption:'One day at a time.',date:today,asset:require('./assets/media/community-demo-aaron-v2.png'),initials:'AR',color:'#062B60',likes:8},
   ];
-  const posts = feedFilter === 'My wraps' ? localPosts : isDemo ? [...localPosts, ...samplePosts] : livePosts;
-  const renderCalendar = () => <View><View style={s.weekLabels}>{['S','M','T','W','T','F','S'].map((d,i) => <Text key={i} style={s.weekLabel}>{d}</Text>)}</View><View style={s.calendar}>{Array.from({ length: new Date(`${days[0]}T12:00:00Z`).getUTCDay() }, (_, i) => <View key={`blank${i}`} style={s.dayCell}/>)}{days.map(d => {
-    const checked = checks.some(c => c.date === d), shabbat = isShabbat(d), active = d === today;
-    return <View key={d} style={s.dayCell}><View accessibilityLabel={`${d}${shabbat ? ', Shabbat' : checked ? ', wrapped' : active ? ', today' : ''}`} style={[s.dayInner, checked && { backgroundColor: '#16396B' }, active && { borderWidth: 1, borderColor: C.gold }, shabbat && { backgroundColor: '#14161A' }]}>{checked ? <Icon name="checkmark" color={C.green} size={17}/> : shabbat ? <Icon name="moon-outline" size={13} color={C.dim}/> : <Text style={{ color: active ? C.gold : d < today ? C.muted : C.dim, fontSize: 12 }}>{Number(d.slice(-2))}</Text>}</View></View>;
-  })}</View><View style={[s.row, { gap: 15, marginTop: 15 }]}><View style={[s.row,{gap:5}]}><View style={[s.dot,{backgroundColor:C.green}]}/><Text style={s.tiny}>Wrapped</Text></View><View style={[s.row,{gap:5}]}><Icon name="moon-outline" size={11}/><Text style={s.tiny}>Shabbat · rest day</Text></View></View></View>;
+  const posts = isDemo ? (communityView==='global'?[...localPosts,...demoPosts]:[]) : communityView==='mine' ? communityPosts : livePosts;
+  const myCommunityName=communities.find(item=>item.id===myCommunityId)?.name;
+  const changeCommunity=async(communityId:string|null)=>{
+    if(!supabase||!user){setSheet(null);setNotice('Sign in to join a community.');return;}
+    setBusy(true);
+    try{
+      const {error}=await supabase.rpc('set_my_community',{p_community_id:communityId});
+      if(error)throw error;
+      await refreshLive();
+      setCommunityView(communityId?'mine':'global');
+      setSheet(null);
+    }catch(error:any){setNotice(error.message||'Could not update your community.');}
+    finally{setBusy(false);}
+  };
+  const joinCommunityByCode=async()=>{
+    if(!supabase||!user)return;
+    setBusy(true);
+    try { const {data,error}=await supabase.rpc('join_community_by_code',{p_join_code:communityCode}); if(error)throw error; setMyCommunityId(data);setCommunityCode('');await refreshLive();setCommunityView('mine');setSheet(null); }
+    catch(error:any){setNotice(error.message||'Could not join that community.');} finally{setBusy(false);}
+  };
+  const createCommunity=async()=>{
+    if(!supabase||!user)return;
+    setBusy(true);
+    try { const {data,error}=await supabase.rpc('create_my_community',{p_name:newCommunityName,p_location:newCommunityLocation,p_school:newCommunitySchool}); if(error)throw error; const row=(data||[])[0];setMyCommunityId(row.community_id);setCreatedCommunityCode(row.join_code);setNewCommunityName('');setNewCommunityLocation('');setNewCommunitySchool('');setCommunityLocationChosen(false);setCommunitySchoolChosen(false);await refreshLive();setCommunityView('mine');setSheet('community'); }
+    catch(error:any){setNotice(error.message||'Could not create your community.');} finally{setBusy(false);}
+  };
+  const openCommunityMembership=(mode:'create'|'join')=>{
+    if(!user){openAuth(true);return;}
+    setCreatedCommunityCode(null);
+    setSheet(mode==='create'?'community-create':'community-join');
+  };
+  const showCommunityInviteCode=async()=>{
+    if(!supabase||!myCommunityId)return;
+    setBusy(true);
+    try{const {data,error}=await supabase.rpc('community_invite_code',{p_community_id:myCommunityId});if(error||!data)throw error||new Error('Could not load the invite code.');setCreatedCommunityCode(data);setSheet('community');}
+    catch(error:any){setNotice(error.message||'Could not load the invite code.');}
+    finally{setBusy(false);}
+  };
+  const trendScore=(post:Post)=>{
+    const ageHours=post.createdAt?Math.max(0,(Date.now()-Date.parse(post.createdAt))/3600000):24;
+    const freshness=Math.exp(-ageHours/18);
+    return ((post.likes||0)+(liked.includes(post.id)?1:0)+4)*freshness;
+  };
+  const displayedPosts = posts.filter(post=>!hiddenPostIds.includes(post.id)&&(!post.userId||!blockedUserIds.includes(post.userId))).sort((a,b)=>{
+    const aAge=a.createdAt?Math.max(0,Date.now()-Date.parse(a.createdAt)):86400000;
+    const bAge=b.createdAt?Math.max(0,Date.now()-Date.parse(b.createdAt)):86400000;
+    const aRecent=aAge<86400000,bRecent=bAge<86400000;
+    if(aRecent!==bRecent)return aRecent?-1:1;
+    return trendScore(b)-trendScore(a);
+  });
+  const weekDays = Array.from({ length: 7 }, (_, index) => {
+    const date = new Date(`${today}T12:00:00`);
+    date.setDate(date.getDate() - 3 + index);
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  });
+  const todayRingSize = Math.min(width - 104, 292);
+  const renderWeeklyCheckins = () => <View style={s.todayWeek}>
+    {weekDays.map(day => {
+      const exempt = wrapExemption(day);
+      const checked = !exempt && checks.some(check => check.date === day);
+      const active = day === today;
+      const weekday = new Date(`${day}T12:00:00`).toLocaleDateString('en-US', { weekday: 'narrow' });
+      return <View key={day} style={s.todayWeekItem}>
+        <Text style={[s.todayWeekLabel, { color: active ? C.text : C.muted }]}>{weekday}</Text>
+        <View accessibilityLabel={`${day}${active ? ', today' : ''}${checked ? ', wrapped' : exempt ? `, ${exempt}` : ''}`} style={[
+          s.todayWeekCircle,
+          { backgroundColor: checked ? C.gold : C.card, borderColor: C.line },
+          exempt && { backgroundColor: C.raised, borderColor: C.line },
+          active && { backgroundColor: C.text, borderColor: C.text, borderWidth: 2 },
+        ]}>
+          {checked ? <Icon name="checkmark" size={17} color="#FFFFFF" /> : exempt ? <Icon name={isShabbat(day) ? 'moon-outline' : 'sparkles-outline'} size={14} color={active ? '#FFFFFF' : C.muted} /> : <Text style={[s.todayWeekDate, { color: active ? '#FFFFFF' : C.muted }]}>{Number(day.slice(-2))}</Text>}
+        </View>
+        {active ? <Text style={s.todayMarker}>TODAY</Text> : <View style={{height:12}}/>}
+      </View>;
+    })}
+  </View>;
 
   const showCover = !user && !entered;
-  const todayScreen = <>
-    <Text style={s.title}>{new Date(`${today}T12:00:00`).toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}</Text>
-    <View style={s.dailyCard}>
-      
-      <Text style={s.dailyTitle}>{rest ? 'Shabbat shalom.' : completed ? 'Mission complete.' : 'Show up.'}</Text>
-      <Button label={rest ? 'Rest day' : completed ? 'View wrap' : 'Post your wrap'} icon={completed ? 'checkmark' : 'camera-outline'} disabled={rest} onPress={() => { if (completed) { setFeedFilter('My wraps'); setTab('Community'); } else { setPhoto(null); setSheet('photo'); } }}/>
+  useEffect(()=>{
+    if(!showCover){setHomeSloganVisible(false);homeSloganOpacity.setValue(0);homeActionsOpacity.setValue(0);}
+  },[showCover,homeSloganOpacity,homeActionsOpacity]);
+  useEffect(()=>{
+    if(!homeSloganVisible)return;
+    homeSloganOpacity.setValue(0);
+    homeActionsOpacity.setValue(0);
+    const animation=Animated.sequence([
+      Animated.timing(homeSloganOpacity,{toValue:1,duration:reduceMotion?0:300,easing:Easing.out(Easing.cubic),useNativeDriver:true}),
+      Animated.timing(homeActionsOpacity,{toValue:1,duration:reduceMotion?0:300,easing:Easing.out(Easing.cubic),useNativeDriver:true}),
+    ]);
+    animation.start();
+    return ()=>animation.stop();
+  },[homeSloganVisible,reduceMotion,homeSloganOpacity,homeActionsOpacity]);
+  const todayScreen = <View style={s.todayLayout}>
+    {postingBlocked&&<View style={s.exemptionNoticeGroup}><View style={s.todayRestNotice}><Icon name="sparkles-outline" color={C.text} size={20}/><Text style={s.todayRestText}>No wrap required today</Text><Pressable accessibilityRole="button" accessibilityLabel="Why no wrap is required today" accessibilityState={{expanded:exemptionInfoOpen}} onPress={()=>setExemptionInfoOpen(open=>!open)} hitSlop={8} style={s.exemptionInfo}><Icon name="information" color={C.text} size={13}/></Pressable></View>{exemptionInfoOpen&&<View style={s.exemptionPopover}><View style={s.exemptionPointer}/><Text style={s.exemptionPopoverText}>{exemptionExplanation}</Text></View>}</View>}
+    <View style={s.todayHero}>
+      <View style={[s.todayRing, { width: todayRingSize, height: todayRingSize, borderRadius: todayRingSize / 2, backgroundColor: C.raised, borderColor: C.line }]}>
+        <View style={[s.todayRingInner, { backgroundColor: C.card, borderRadius: (todayRingSize - 26) / 2,overflow:'hidden' }]}>
+          <BrandLogo size={Math.round(todayRingSize * .43)} onReady={()=>markMainAsset('today-mark')} />
+          {todaysWrap?.uri&&<Image source={{uri:todaysWrap.uri}} style={StyleSheet.absoluteFill} resizeMode="cover" fadeDuration={0} accessibilityLabel="Your wrap photo for today"/>}
+        </View>
+      </View>
     </View>
-    <View style={[s.card,s.row,{marginTop:18,gap:12}]}><Icon name="flame" color={C.gold} size={25}/><Text style={{color:C.text,fontSize:22,fontWeight:'600'}}>{streakCount} day streak</Text></View>
-    <Section title="Calendar"/>
-    <View style={s.card}>{renderCalendar()}</View>
-  </>;
-  const challengeScreen = <>
-    <Text style={s.title}>Challenge</Text>
-    {!isDemo&&<Text style={[s.caption,{marginBottom:18}]}>{paymentsLive?'':'Test mode · '}{enrolledMonths.includes(today.slice(0,7)+'-01')?'Enrolled this month':membership?.cancel_at_period_end?'Renewal canceled':membership?.status==='active'?(enrolledMonths.some(m=>m>today)?'Next month enrolled':'Payment confirmation pending'):membership?`Membership: ${membership.status}`:'No paid membership'}</Text>}
-    <View style={s.card}><View style={[s.row,{justifyContent:'space-between'}]}><Text style={s.sectionTitle}>{monthName}</Text><Text style={{color:C.gold,fontSize:15}}>{monthChecks.length}/{required.length}</Text></View><View style={{alignItems:'center',paddingVertical:24}}><Ring count={monthChecks.length} total={required.length}/></View>{renderCalendar()}</View>
-    <Section title="Monthly contribution"/>
-    <Pressable style={[s.card,s.row,{justifyContent:'space-between'}]} onPress={openContribution}><Text style={s.statNumber}>{money(contribution)}</Text><Icon name="chevron-forward"/></Pressable>
-    <View style={{marginTop:20}}><Button label="Challenge rules" secondary onPress={()=>setSheet('rules')}/></View>
-  </>;
-  const communityScreen = <>
-    <Text style={s.title}>Community</Text>
-    <View style={[s.row,{gap:8,marginBottom:20}]}>{(['Everyone','My wraps'] as const).map(f=><Pressable key={f} onPress={()=>setFeedFilter(f)} style={[s.filter,feedFilter===f&&{backgroundColor:C.gold}]}><Text style={{fontSize:14,fontWeight:'600',color:feedFilter===f?'#fff':C.muted}}>{f}</Text></Pressable>)}</View>
-    <View style={{gap:16}}>{posts.length===0?<View style={[s.card,{alignItems:'center',padding:35}]}><Icon name="camera-outline" size={36} color={C.gold}/><Text style={[s.sectionTitle,{marginVertical:22}]}>No wraps yet.</Text><Button label="Post a wrap" onPress={()=>setSheet('photo')} disabled={completed||rest}/></View>:posts.map(post=><View key={post.id} style={[s.card,s.postCard]}><View style={[s.row,{gap:12,padding:18}]}><View style={[s.avatar,{backgroundColor:'#13264B'}]}><Text style={s.avatarText}>{post.initials}</Text></View><Text style={[s.body,{color:C.text,flex:1,fontWeight:'600'}]}>{post.name}</Text>{!post.uri&&<Text style={s.caption}>Demo</Text>}</View>{post.uri?<Image source={{uri:post.uri}} style={s.postPhoto} accessibilityLabel={`${post.name}'s wrap`}/>:<View style={s.samplePost}><BrandLogo size={110}/></View>}<View style={{padding:18}}><Text style={[s.body,{color:C.text}]}>{post.caption}</Text><Pressable onPress={()=>{if(!isDemo){setNotice('Reactions are coming soon.');return;}setLiked(v=>v.includes(post.id)?v.filter(id=>id!==post.id):[...v,post.id]);}} accessibilityRole="button" accessibilityLabel="Encourage" style={{marginTop:16,alignSelf:'flex-start',padding:4}}><Icon name={liked.includes(post.id)?'heart':'heart-outline'} color={liked.includes(post.id)?C.gold:C.muted}/></Pressable></View></View>)}</View>
-  </>;
-  const walletScreen = <>
-    <Text style={s.title}>Wallet</Text>
-    <View style={[s.card,{padding:25}]}><Text style={s.caption}>{isDemo?'Demo giving balance':'Giving balance'}</Text><Text style={[s.bigMoney,{fontSize:52,marginVertical:22}]}>{money(balance)}</Text><Button label="Donate" onPress={openTransfer} disabled={balance<=0}/></View>
+    {!postingBlocked&&!completed&&<Pressable accessibilityRole="button" accessibilityLabel="Post your wrap" disabled={busy} onPress={takePhoto} style={({ pressed }) => [s.todayPrimary, { backgroundColor: '#062B60', opacity: pressed ? .8 : 1 }]}>
+      <Icon name="camera-outline" color="#FFFFFF" size={20}/>
+      <Text style={[s.todayPrimaryText, { color: '#FFFFFF' }]}>Post your wrap</Text>
+    </Pressable>}
+    {renderWeeklyCheckins()}
+    {cholHamoed&&<Text style={[s.todayNote, { color: C.muted }]}>On weekdays during Chol Hamoed, wrapping is optional. Follow your custom; your streak is protected.</Text>}
+  </View>;
+  const communityScreen = <View style={s.communityLayout}>
+    <View style={s.communitySelector}>{(['global','mine'] as const).map(view=>{const label=view==='global'?'Global':myCommunityName||'Join a Community';return <Pressable key={view} accessibilityRole="tab" accessibilityLabel={label} accessibilityState={{selected:communityView===view}} onPress={()=>setCommunityView(view)} style={[s.communitySelectorOption,communityView===view&&s.communitySelectorSelected]}><Text numberOfLines={1} style={[s.communitySelectorText,communityView===view&&s.communitySelectorSelectedText]}>{label}</Text></Pressable>;})}</View>
+    {communityView==='mine'&&user&&!myCommunityId&&<View style={s.communityMembershipActions}><Button label="Create a Community" nav onPress={()=>openCommunityMembership('create')}/><Button label="Join with a code" secondary onPress={()=>openCommunityMembership('join')}/></View>}
+    {communityView==='mine'&&<CommunityAdmin userId={user?.id||null} communityId={myCommunityId}/>} 
+    <View style={s.communityFeed}>{displayedPosts.length===0?null:displayedPosts.map(post=>{
+      const likes=(post.likes||0)+(liked.includes(post.id)?1:0);
+      return <View key={post.id} style={s.communityPost}>
+        <View style={s.communityPostHeader}><View style={[s.communityAvatar,{backgroundColor:post.color}]}><Text style={s.communityAvatarText}>{post.initials}</Text></View><View style={{flex:1}}><Text style={s.communityName}>{post.name}</Text><Text style={s.communityDate}>{new Date(`${post.date}T12:00:00`).toLocaleDateString('en-US',{month:'short',day:'numeric',year:'numeric'})}</Text></View><Pressable accessibilityRole="button" accessibilityLabel={`Post options for ${post.name}`} onPress={()=>{setMenuPost(post);setSheet('post-menu');}} hitSlop={10}><Icon name="ellipsis-horizontal" color={C.muted} size={22}/></Pressable></View>
+        <Pressable accessibilityRole="button" accessibilityLabel="Double tap to like" onPress={()=>handlePostTap(post.id)}>{post.uri?<Image fadeDuration={0} source={{uri:post.uri}} style={s.communityPhoto} accessibilityLabel={`${post.name}'s wrap`}/>:post.asset?<Image fadeDuration={0} source={post.asset} style={s.communityPhoto} accessibilityLabel={`${post.name}'s wrap`}/>:<Image fadeDuration={0} source={require('./assets/media/community-tel-aviv-background.png')} style={s.communityPhoto} accessibilityLabel="Sample community post"/>}</Pressable>
+        <View style={s.communityPostFooter}><Text style={s.communityCaption}>{post.caption}</Text><Pressable onPress={()=>toggleLike(post.id)} accessibilityRole="button" accessibilityLabel={`Like, ${likes} likes`} style={s.communityLike}><Icon name={liked.includes(post.id)?'heart':'heart-outline'} color={C.text} size={25}/><Text style={s.communityLikes}>{likes}</Text></Pressable></View>
+      </View>;
+    })}</View>
+  </View>;
+  const goal=tefillinGoalProgress(balance);
+  const goalReached=goalEnabled&&goal.available>=35000;
+  const openProfileEditor=(field:'name'|'birthday'|'school'|'phone')=>{
+    const birthday=memberDetails?.birthday;
+    const birthdayInput=birthday?`${birthday.slice(5,7)}/${birthday.slice(8,10)}/${birthday.slice(0,4)}`:'';
+    setEditingProfileField(field);
+    setProfileEditValue(field==='name'?memberDetails?.full_name||firstName:field==='birthday'?birthdayInput:field==='school'?memberDetails?.school||'':formatUsPhone(memberDetails?.phone||''));
+    setNotice('');
+  };
+  const saveProfileEdit=async()=>{
+    if(!supabase||!memberDetails||!editingProfileField||busy)return;
+    const value=profileEditValue.trim();
+    const fullName=editingProfileField==='name'?value:memberDetails.full_name;
+    const phone=editingProfileField==='phone'?value:memberDetails.phone||null;
+    const school=editingProfileField==='school'?value||null:memberDetails.school;
+    let birthday=memberDetails.birthday;
+    try{
+      if(editingProfileField==='name'&&!fullName)throw new Error('Enter your full name.');
+      if(editingProfileField==='phone'&&value&&phoneDigits(value).length!==10)throw new Error('Enter a 10-digit phone number.');
+      if(editingProfileField==='birthday')birthday=parseBirthday(value);
+      setBusy(true);
+      const {error}=await supabase.rpc('update_member_profile',{p_full_name:fullName,p_phone:phone,p_school:school,p_birthday:birthday});
+      if(error)throw error;
+      setMemberDetails(current=>current?{...current,full_name:fullName,phone,school,birthday}:current);
+      setProfile((current:any)=>({...current,display_name:fullName.split(/\s+/)[0]}));
+      setEditingProfileField(null);
+    }catch(error:any){setNotice(error.message||'Could not update your information.');}finally{setBusy(false);}
+  };
+  const walletActivity = <>
     {!isDemo&&donations.length>0&&<><Section title="Donations"/><View style={s.card}>{donations.map(d=><View key={d.id} style={{paddingVertical:12,gap:7}}><Text style={s.body}>{d.cause_name} · {money(d.amount_cents)}</Text><Text style={{color:C.gold}}>{d.status==='fulfilled'?'Donated':d.status==='canceled'?'Canceled · balance returned':'Pending donation'}</Text>{d.status==='fulfilled'&&<Text selectable style={s.body}>Confirmation: {d.fulfillment_reference}</Text>}</View>)}</View></>}
-    <Section title="Activity"/>
-    <View style={s.card}>{transactions.length?transactions.map((tx,i)=><View key={tx.id} style={[s.transaction,i>0&&{borderTopWidth:1,borderTopColor:C.line}]}><Icon name={tx.cents>0?'arrow-down-outline':'arrow-up-outline'} color={C.gold} size={20}/><Text style={[s.body,{color:C.text,flex:1}]}>{tx.title}</Text><Text style={[s.body,{color:C.text}]}>{tx.cents>0?'+':''}{money(tx.cents)}</Text></View>):<Text style={s.body}>No transactions yet.</Text>}</View>
-    <Text style={[s.caption,{marginTop:20}]}>{isDemo?'Demo only. No real money moves.':'Ratzon makes donations on your behalf. Completed donations appear here.'}</Text>
+    {transactions.length?<View style={s.card}>{transactions.map((tx,i)=><View key={tx.id} style={[s.transaction,i>0&&{borderTopWidth:1,borderTopColor:C.line}]}><Icon name={tx.cents>0?'arrow-down-outline':'arrow-up-outline'} color={C.gold} size={20}/><Text style={[s.body,{color:C.text,flex:1}]}>{tx.title}</Text><Text style={[s.body,{color:C.text}]}>{tx.cents>0?'+':''}{money(tx.cents)}</Text></View>)}</View>:<View style={s.emptyActivity}><Text style={s.body}>No transactions yet.</Text></View>}
   </>;
-  const youScreen = <>
-    <Text style={s.title}>You</Text>
-    <View style={[s.card,s.row,{gap:16}]}><View style={[s.avatar,{width:54,height:54,borderRadius:27,backgroundColor:'#11254A'}]}><Text style={[s.avatarText,{fontSize:22}]}>{firstName.slice(0,1)}</Text></View><Text style={[s.sectionTitle,{fontSize:22}]}>{firstName}</Text></View>
-    <View style={{gap:12,marginTop:22}}><Button label="Monthly contribution" secondary onPress={openContribution}/><Button label="Rules & privacy" secondary onPress={()=>setSheet('rules')}/>{isDemo?<><Button label="Create account" onPress={()=>{setSignup(true);setSheet('auth');}}/><Button label="Back to welcome" secondary onPress={()=>setEntered(false)}/><Button label="Reset demo" secondary onPress={()=>{setDemo(initialDemo());setNotice('Demo reset.');}}/></>:<Button label="Sign out" secondary onPress={async()=>{await supabase!.auth.signOut();setEntered(false);}}/>}</View>
-  </>;
-  return <SafeAreaView style={{flex:1,backgroundColor:'#000'}} edges={['top','left','right']}><StatusBar style="light"/><View style={s.app}>
+  const accountName=memberDetails?.full_name||firstName;
+  const accountBirthday=memberDetails?.birthday ? new Date(`${memberDetails.birthday}T12:00:00`).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : 'Not provided';
+  const accountSchool=memberDetails?.school||'Not provided';
+  const accountPhone=memberDetails?.phone?formatUsPhone(memberDetails.phone):'Not provided';
+  const donateFromWallet=goalReached?()=>setNotice('Your $350 tefillin goal is ready for review. Final price, eligibility, and supplier confirmation are required before a purchase.'):openTransfer;
+  const settingsInfoRow=(label:string,field:'name'|'birthday'|'school'|'phone',value:string)=>editingProfileField===field
+    ? <View key={field} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>{label}</Text><TextInput autoFocus accessibilityLabel={`Edit ${label}`} style={s.settingsInlineInput} value={profileEditValue} onChangeText={text=>setProfileEditValue(field==='phone'?formatUsPhone(text):text)} autoCapitalize={field==='name'?'words':'none'} autoCorrect={false} keyboardType={field==='phone'?'phone-pad':'default'} placeholder={field==='birthday'?'MM/DD/YYYY':field==='phone'?'(555) 123-4567':''} placeholderTextColor={C.dim} maxLength={field==='name'?80:field==='phone'?14:field==='school'?120:10} editable={!busy} onSubmitEditing={saveProfileEdit}/><Pressable accessibilityRole="button" accessibilityLabel={`Save ${label}`} disabled={busy} onPress={saveProfileEdit} hitSlop={8}><Icon name="checkmark" size={20} color={C.text}/></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Cancel editing ${label}`} disabled={busy} onPress={()=>setEditingProfileField(null)} hitSlop={8}><Icon name="close" size={19} color={C.muted}/></Pressable></View>
+    : <Pressable key={field} accessibilityRole="button" accessibilityLabel={`Edit ${label}`} onPress={()=>openProfileEditor(field)} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>{label}</Text><Text style={s.settingsInfoValue}>{value}</Text></Pressable>;
+  const accountHome = <View style={s.accountHome}>
+    {FINANCIAL_FEATURES_ENABLED&&<View style={s.accountWallet}>
+      <View style={s.walletLabelRow}>
+        <Text style={s.accountWalletLabel}>Wallet</Text>
+        <Pressable accessibilityRole="button" accessibilityLabel="Wallet fee information" hitSlop={10} onPress={()=>setNotice('Wallet balances reflect your contribution after Stripe processing fees are deducted. Month-end redistribution is shown separately as a gain or loss.')}>
+          <Icon name="information-circle-outline" size={18} color={C.muted}/>
+        </Pressable>
+      </View>
+      <Text style={s.accountBalance}>{money(balance)}</Text>
+      {goalEnabled&&<View style={s.accountGoal}>
+        <View style={[s.row,{justifyContent:'space-between'}]}><Text style={s.accountGoalLabel}>Tefillin goal</Text><Text style={s.accountGoalLabel}>{money(goal.available)} / $350</Text></View>
+        <View accessibilityRole="progressbar" accessibilityLabel="Tefillin goal" accessibilityValue={{min:0,max:100,now:Math.round(goal.percent)}} style={s.accountGoalTrack}><View style={[s.accountGoalProgress,{width:`${goal.percent}%`}]} /></View>
+      </View>}
+      <Pressable accessibilityRole="button" accessibilityLabel={goalReached?'Purchase tefillin':'Donate'} onPress={donateFromWallet} style={({pressed})=>[s.accountDonate,{opacity:pressed?.78:1}]}><Icon name={goalReached?'bag-handle-outline':'arrow-up-outline'} size={24} color="#FFFFFF"/><Text style={s.accountDonateText}>{goalReached?'Purchase tefillin':'Donate'}</Text></Pressable>
+    </View>}
+  </View>;
+  const settingsScreen = <View style={s.settingsPage}>
+    <View style={s.settingsSection}>
+      <Text style={s.settingsSectionTitle}>Account Information</Text>
+      {settingsInfoRow('Name','name',accountName)}
+      {settingsInfoRow('Birthday','birthday',accountBirthday)}
+      {settingsInfoRow('School','school',accountSchool)}
+      {settingsInfoRow('Phone Number','phone',accountPhone)}
+      <Pressable accessibilityRole="button" accessibilityLabel="Community" onPress={()=>setSheet('community')} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>Community</Text><Text style={s.settingsInfoValue}>{myCommunityName||'None'}</Text><Icon name="chevron-forward" size={17} color={C.muted}/></Pressable>
+    </View>
+    <View style={s.settingsSection}>
+      {FINANCIAL_FEATURES_ENABLED&&<><Pressable accessibilityRole="button" accessibilityLabel="Wallet activity" onPress={()=>setSheet('wallet-activity')} style={s.settingsAction}><Text style={s.settingsActionText}>Wallet activity</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Monthly contribution" onPress={openContribution} style={s.settingsAction}><Text style={s.settingsActionText}>Monthly contribution</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable></>}
+      <Pressable accessibilityRole="button" accessibilityLabel="Rules and privacy" onPress={()=>setSheet('rules')} style={s.settingsAction}><Text style={s.settingsActionText}>Rules & privacy</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>
+      {isAdmin&&<Pressable accessibilityRole="button" accessibilityLabel="Reported posts" disabled={busy} onPress={loadReports} style={s.settingsAction}><Text style={s.settingsActionText}>Reported posts</Text><Icon name="shield-checkmark-outline" size={19} color={C.muted}/></Pressable>}
+      {FINANCIAL_FEATURES_ENABLED&&!goalEnabled&&<Pressable accessibilityRole="button" accessibilityLabel="Set up tefillin goal" onPress={()=>setSheet('tefillin-goal')} style={s.settingsAction}><Text style={s.settingsActionText}>Set up tefillin goal</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>}
+    </View>
+    <View style={s.settingsSection}>
+      <Pressable accessibilityRole="link" accessibilityLabel="Contact Jared at Ratzon" onPress={()=>Linking.openURL('mailto:jared@ratzonapp.com').catch(()=>setNotice('Email jared@ratzonapp.com'))} style={s.settingsAction}><Text style={s.settingsActionText}>Contact</Text><Text style={s.settingsInfoValue}>jared@ratzonapp.com</Text></Pressable>
+      {isDemo?<><Pressable accessibilityRole="button" onPress={()=>openAuth(true)} style={s.settingsAction}><Text style={s.settingsActionText}>Create account</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable><Pressable accessibilityRole="button" onPress={()=>setEntered(false)} style={s.settingsAction}><Text style={s.settingsActionText}>Back to welcome</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable><Pressable accessibilityRole="button" onPress={()=>{setDemo(initialDemo());setNotice('Demo reset.');}} style={s.settingsAction}><Text style={s.settingsActionText}>Reset demo</Text><Icon name="refresh-outline" size={19} color={C.muted}/></Pressable></>:<><Pressable accessibilityRole="button" onPress={()=>{setNotice('');setSheet('delete-account');}} style={s.settingsAction}><Text style={[s.settingsActionText,{color:'#B42318'}]}>Delete account</Text><Icon name="trash-outline" size={19} color="#B42318"/></Pressable><Pressable accessibilityRole="button" onPress={async()=>{await supabase!.auth.signOut();setEntered(false);}} style={s.settingsAction}><Text style={s.settingsActionText}>Sign out</Text><Icon name="log-out-outline" size={19} color={C.muted}/></Pressable></>}
+    </View>
+  </View>;
+  const profileScreen = user&&(onboardingState==='needed'||returnToOnboarding)? <Onboarding onComplete={finishOnboarding} communities={communities} initialStep={returnToOnboarding?8:0} initialValues={returnToOnboarding?{fullName:memberDetails?.full_name||'',gender:memberDetails?.gender||null,phone:memberDetails?.phone||'',school:memberDetails?.school||'',birthday:birthdayForInput(memberDetails?.birthday),tradition:memberDetails?.tradition||null,ownsTefillin:null,borrowSource:null,communityCode:''}:undefined}/> : user&&(onboardingState==='loading'||onboardingState==='error')? <SafeAreaView style={{flex:1,backgroundColor:'#EDF4FF',justifyContent:'center',padding:28}}><StatusBar style="dark"/>{onboardingState==='error'&&<><Text style={{textAlign:'center',color:'#062B60',marginBottom:20}}>Could not load your profile.</Text><Button label="Try again" onPress={async()=>{setOnboardingState('loading');const {data,error}=await supabase!.from('member_onboarding').select('full_name,gender,phone,school,birthday,tradition,completed_at').eq('user_id',user.id).maybeSingle();setMemberDetails(data as MemberDetails|null);setOnboardingState(error?'error':data?'complete':'needed');}}/></>}</SafeAreaView> : null;
+  const contributionScreen=user&&onboardingState==='complete'&&!paidAccess ? billingState==='error'?<SafeAreaView style={{flex:1,backgroundColor:'#EDF4FF',justifyContent:'center',padding:28}}><Text style={{color:'#062B60',marginBottom:18}}>{billingError}</Text><Button label="Try Again" onPress={()=>{refreshBilling().catch(()=>{});}}/></SafeAreaView>:<PageTransition fadeOnly duration={360}><ContributionSetup live={paymentsLive} initialCents={membership?.contribution_cents||membership?.amount_cents||180} initialCoversStripeFee={Boolean(membership?.covers_stripe_fee)} locked={['creating','incomplete'].includes(membership?.status)} pending={membership?.status==='active'} onPay={subscribeContribution} onRefresh={async()=>{await refreshBilling();}} onEditAmount={async()=>{await billingAction('cancel-pending');await refreshBilling();}} onSkip={__DEV__?()=>setPaymentTestBypass(true):undefined} onBack={()=>setReturnToOnboarding(true)}/></PageTransition>:null;
+  const charityScreen=user&&onboardingState==='complete'&&paidAccess&&billingState==='ready'&&!preferredCauseId?<PageTransition fadeOnly duration={360}><CharitySetup charities={recipients} onSelect={async id=>{if(!supabase)throw new Error('Please sign in again.');const {error}=await supabase.rpc('set_charity_preference',{cause:id,mode:paymentsLive});if(error)throw error;setPreferredCauseId(id);if(pendingWelcome.current){pendingWelcome.current=false;setHomeLaidOut(false);setWelcomePreparing(true);setWelcomeReveal(true);setTab('Today');}}}/></PageTransition>:null;
+  const onboardingScreen=profileScreen||contributionScreen||charityScreen;
+  const backgroundStyle={position:'absolute' as const,top:0,left:0,width,height:Math.max(0,height-navigationHeight)};
+  return <><View style={{flex:1,backgroundColor:C.bg}}>{onboardingScreen || <View style={{flex:1,backgroundColor:showCover?'#EDF4FF':C.bg,overflow:'hidden'}}>{!showCover&&<><Animated.Image source={require('./assets/media/today-jerusalem-background-v2.png')} resizeMode="stretch" fadeDuration={0} onLoadEnd={()=>markMainAsset('jerusalem')} style={[backgroundStyle,tabSlideStyle('Today')]} accessibilityIgnoresInvertColors/><Animated.Image source={require('./assets/media/community-tel-aviv-background.png')} resizeMode="stretch" fadeDuration={0} onLoadEnd={()=>markMainAsset('tel-aviv')} style={[backgroundStyle,tabSlideStyle('Community')]} accessibilityIgnoresInvertColors/><Animated.Image source={require('./assets/media/account-masada-background.png')} resizeMode="stretch" fadeDuration={0} onLoadEnd={()=>markMainAsset('masada')} style={[backgroundStyle,tabSlideStyle('Account')]} accessibilityIgnoresInvertColors/></>}<SafeAreaView style={{flex:1}} edges={showCover?['left','right']:['top','left','right']}><StatusBar style="dark"/><View style={s.app} onTouchStart={event=>{if(paging.current)return;swipeStart.current={x:event.nativeEvent.pageX,y:event.nativeEvent.pageY,horizontal:null};}} onTouchMove={event=>{if(!paging.current)handleMainSwipeMove(event.nativeEvent.pageX,event.nativeEvent.pageY);}} onTouchEnd={event=>{if(!paging.current)handleMainSwipe(event.nativeEvent.pageX,event.nativeEvent.pageY);}} onTouchCancel={()=>{if(!paging.current){swipeStart.current=null;Animated.timing(pagerPosition,{toValue:tabIndex(tab),duration:140,useNativeDriver:true}).start();}}}>
     {showCover ? <SafeAreaView edges={['bottom']} style={s.cover}>
-      <View style={s.coverCenter}><View style={s.coverMark}><BrandLogo size={210}/></View><Text style={s.coverTitle}>Ratzon</Text></View>
-      <View style={{gap:12}}>{appleAvailable?<AppleAuthentication.AppleAuthenticationButton buttonType={AppleAuthentication.AppleAuthenticationButtonType.SIGN_UP} buttonStyle={AppleAuthentication.AppleAuthenticationButtonStyle.WHITE} cornerRadius={12} style={{height:54,width:'100%'}} onPress={signInWithApple}/>:<Pressable accessibilityRole="button" onPress={signInWithApple} style={s.appleButton}><Icon name="logo-apple" color="#000" size={22}/><Text style={{fontSize:17,color:'#000',fontWeight:'600'}}>Sign up with Apple</Text></Pressable>}<Button label="Sign up with email" onPress={()=>{setSignup(true);setSheet('auth');}}/><Pressable onPress={()=>{setSignup(false);setSheet('auth');}} style={{alignItems:'center',padding:13}}><Text style={{color:C.text,fontSize:16}}>Sign in</Text></Pressable><Pressable onPress={()=>setEntered(true)} style={{alignItems:'center',padding:9}}><Text style={{color:C.muted,fontSize:14}}>Preview app</Text></Pressable></View>
+      <LinearGradient pointerEvents="none" colors={['#F8FBFF','#E8F1FF','#D7E7FF']} style={StyleSheet.absoluteFill}/>
+      <View pointerEvents="none" style={[s.coverCenter,{top:'50%',transform:[{translateY:-(Math.min(width - 64,384)*.27*992/795)/2-16}]}]}><WelcomeBrand width={Math.min(width - 64, 384)} onAnimationComplete={()=>setHomeSloganVisible(true)}/><Animated.Text style={{opacity:homeSloganOpacity,marginTop:24,textAlign:'center',color:'#062B60',includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'500',letterSpacing:.4}}>Live With Intention</Animated.Text></View>
+      <Animated.View style={{gap:0,width:'100%',maxWidth:384,alignSelf:'center',opacity:homeActionsOpacity}}>
+        <Pressable accessibilityRole="button" accessibilityLabel="Get Started" onPress={()=>openAuth(true)} style={({pressed})=>[s.getStarted,{opacity:pressed?.8:1}]}><Text style={s.getStartedText}>Get Started</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Already have an account? Log In" onPress={()=>openAuth(false)} style={{alignItems:'center',justifyContent:'center',minHeight:44}}><Text style={{color:'#16365F',includeFontPadding:false,textAlignVertical:'center',fontSize:11}}>Already have an account? <Text style={{fontWeight:'600',textDecorationLine:'underline'}}>Log In</Text></Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Explore demo" onPress={()=>setEntered(true)} style={{alignItems:'center',justifyContent:'center',minHeight:34}}><Text style={{color:'#516987',includeFontPadding:false,textAlignVertical:'center',fontSize:11,textDecorationLine:'underline'}}>Explore demo</Text></Pressable>
+      </Animated.View>
     </SafeAreaView> : <>
-      <View style={s.topbar}><BrandLogo size={52}/></View>
-      <PageTransition key={tab}><ScrollView contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>{tab==='Today'?todayScreen:tab==='Challenge'?challengeScreen:tab==='Community'?communityScreen:tab==='Wallet'?walletScreen:youScreen}</ScrollView></PageTransition>
-      <SafeAreaView edges={['bottom']} style={s.bottomBar}><View style={[s.row,{justifyContent:'space-around'}]}>{tabs.map(item=><Pressable key={item.name} accessibilityRole="tab" accessibilityLabel={item.name} accessibilityState={{selected:tab===item.name}} onPress={()=>setTab(item.name)} style={s.bottomTab}><Icon name={item.icon} size={24} color={tab===item.name?C.gold:C.dim}/><Text style={{fontSize:11,color:tab===item.name?C.gold:C.dim,marginTop:6,fontWeight:'500'}}>{item.name}</Text></Pressable>)}</View></SafeAreaView>
+      <View style={{flex:1}}>
+        <Animated.View accessibilityElementsHidden={tab!=='Today'} importantForAccessibility={tab==='Today'?'auto':'no-hide-descendants'} pointerEvents={tab==='Today'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Today'),{zIndex:tab==='Today'?1:0}]}><View style={[s.topbar,{justifyContent:'center'}]} onLayout={()=>{if(welcomeReveal)setHomeLaidOut(true);}}><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={.75} style={[s.pageTitle,{textAlign:'center',transform:[{translateY:30}]}]}>{new Date(`${today}T12:00:00`).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</Text></View><View style={[s.content,{flex:1}]}>{todayScreen}</View></Animated.View>
+        <Animated.View accessibilityElementsHidden={tab!=='Community'} importantForAccessibility={tab==='Community'?'auto':'no-hide-descendants'} pointerEvents={tab==='Community'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Community'),{zIndex:tab==='Community'?1:0}]}><ScrollView removeClippedSubviews={false} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>{communityScreen}</ScrollView>{communityView==='mine'&&myCommunityId&&<Pressable accessibilityRole="button" accessibilityLabel="Show community invite code" disabled={busy} onPress={showCommunityInviteCode} style={({pressed})=>[s.floatingInviteButton,{opacity:busy?.5:pressed?.75:1}]}><Text style={s.floatingInviteText}>+</Text></Pressable>}</Animated.View>
+        <Animated.View accessibilityElementsHidden={tab!=='Account'} importantForAccessibility={tab==='Account'?'auto':'no-hide-descendants'} pointerEvents={tab==='Account'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Account'),{zIndex:tab==='Account'?1:0}]}><ScrollView style={{flex:1}} contentContainerStyle={[s.content,{paddingTop:18,paddingBottom:22}]} bounces={false} alwaysBounceVertical={false} overScrollMode="never" contentInsetAdjustmentBehavior="never" automaticallyAdjustKeyboardInsets={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{accountHome}{settingsScreen}</ScrollView></Animated.View>
+      </View>
+      <SafeAreaView edges={['bottom']} onLayout={event=>setNavigationHeight(event.nativeEvent.layout.height)} style={s.bottomBar}><View style={[s.row,{justifyContent:'space-around',alignItems:'center'}]}>{tabs.map(item=><Pressable key={item.name} accessibilityRole="tab" accessibilityLabel={item.name} accessibilityState={{selected:tab===item.name}} onPress={()=>selectTab(item.name)} style={s.bottomTab}>
+        <Icon name={item.icon} size={30} color={tab===item.name?C.gold:C.dim}/>
+        <Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:11,color:tab===item.name?C.gold:C.muted,marginTop:4,fontWeight:'600'}}>{item.name}</Text>
+      </Pressable>)}</View></SafeAreaView>
     </>}
     </View>
-    <Modal visible={!!sheet} transparent animationType="fade" onRequestClose={()=>!busy&&setSheet(null)}><KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={s.modalBackdrop}><Pressable style={StyleSheet.absoluteFill} onPress={()=>!busy&&setSheet(null)} accessibilityLabel="Close dialog"/><View style={[s.modal,{maxHeight:'90%',width:Math.min(width-32,480)}]}><View style={[s.row,{justifyContent:'space-between',marginBottom:24}]}><Text style={s.sectionTitle}>{sheet==='photo'?'Your daily moment':sheet==='contribution'?'Make your commitment':sheet==='transfer'?'Give to a cause':sheet==='auth'?(signup?'Welcome to the community':'Welcome back'):'The challenge, simply.'}</Text><Pressable onPress={()=>!busy&&setSheet(null)} accessibilityRole="button" accessibilityLabel="Close" hitSlop={12}><Icon name="close"/></Pressable></View><ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
-    {sheet==='photo'&&<>{rest||completed?<View><Text style={[s.body,{marginBottom:20}]}>{rest?'Shabbat shalom. No photo needed today.':'You already posted today. Come back tomorrow for your next wrap.'}</Text><Button label="Back to today" onPress={()=>{setTab('Today');setSheet(null);}}/></View>:<>{photo?<Image source={{uri:photo}} style={{width:'100%',height:280,borderRadius:16,marginBottom:18}}/>:<View style={s.photoPlaceholder}><Icon name="camera-outline" size={44} color={C.gold}/><Text style={[s.body,{textAlign:'center',marginTop:15}]}>Add your photo</Text></View>}<View style={[s.row,{gap:10,marginBottom:18}]}><View style={{flex:1}}><Button label="Camera" icon="camera-outline" secondary onPress={()=>pickPhoto(true)}/></View><View style={{flex:1}}><Button label="Choose photo" secondary onPress={()=>pickPhoto(false)}/></View></View><TextInput style={[s.input,{minHeight:80}]} placeholder="A thought from today (optional)" placeholderTextColor={C.dim} value={caption} onChangeText={setCaption} multiline maxLength={500}/><View style={[s.row,{justifyContent:'space-between',marginVertical:20}]}><View style={{flex:1}}><Text style={[s.body,{color:C.text}]}>Share with the community</Text></View><Switch value={sharePhoto} onValueChange={setSharePhoto} trackColor={{false:C.line,true:'#2478FF'}} thumbColor={C.text}/></View><Button label={busy?'Posting…':isDemo?'Save demo wrap':'Post today’s wrap'} onPress={postPhoto} disabled={!photo||busy}/><Text style={[s.tiny,{marginTop:15,textAlign:'center'}]}>{isDemo?'Demo photos are saved on this device only.':'Members can see shared photos. Private photos stay yours.'}</Text></>}</>}
-    {sheet==='contribution'&&<><View style={[s.row,{gap:10,marginBottom:20}]}>{['5','18','36','54'].map(v=><Pressable key={v} onPress={()=>setAmount(v)} style={[s.amountChip,amount===v&&{borderColor:C.gold,backgroundColor:'#11254A'}]}><Text style={{color:amount===v?C.gold:C.text,fontSize:18,fontWeight:'500'}}>${v}</Text>{v==='18'&&<Text style={{color:C.gold,fontSize:8,marginTop:4}}>RECOMMENDED</Text>}</Pressable>)}</View><Text style={[s.caption,{marginBottom:9}]}>Monthly contribution (USD)</Text><TextInput accessibilityLabel="Monthly contribution in dollars" style={s.input} value={amount} onChangeText={setAmount} keyboardType="decimal-pad"/><Text style={[s.tiny,{marginVertical:18}]}>$5 minimum. For the demo, changes apply immediately. Paid challenges will begin on the first of the next month.</Text>{!isDemo&&<View style={[s.row,{gap:12,marginBottom:18}]}><Switch accessibilityLabel="Agree to monthly billing" value={recurringConsent} onValueChange={setRecurringConsent}/><Text style={[s.caption,{flex:1}]}>I agree to {money(Math.round(Number(amount||0)*100))} monthly, starting now. Each paid invoice funds the next calendar month. Cancel renewal anytime.</Text></View>}<Button label={busy?'Opening checkout…':isDemo?'Set demo contribution':paymentsLive?'Subscribe':'Subscribe in test mode'} disabled={busy||(!isDemo&&!recurringConsent)} onPress={saveContribution}/>{!isDemo&&membership&&<Button label={membership.cancel_at_period_end?'Renewal canceled':'Cancel renewal'} disabled={busy||membership.cancel_at_period_end} secondary onPress={async()=>{try{setBusy(true);await billingAction('cancel');await refreshLive();setNotice('Renewal canceled. Your paid month remains enrolled.');}catch(e:any){setNotice(e.message);}finally{setBusy(false);}}}/>}<Text style={[s.tiny,{marginTop:14,textAlign:'center'}]}>{isDemo?'No charge will be made.':paymentsLive?'Payment is verified before enrollment. Processing fees are deducted from the pool.':'Stripe test mode. Test enrollments and balances stay separate.'}</Text></>}
-    {sheet==='transfer'&&<><Text style={[s.bigMoney,{marginBottom:20}]}>{money(balance)}</Text><View style={{gap:8,marginBottom:20}}>{(isDemo?[{id:'Jewish community fund',name:'Jewish community fund'},{id:'Food assistance',name:'Food assistance'},{id:'Jewish education',name:'Jewish education'}]:recipients).map(r=><Pressable key={r.id} accessibilityRole="radio" accessibilityState={{checked:cause===r.id}} style={[s.causeOption,cause===r.id&&{borderColor:C.gold}]} onPress={()=>setCause(r.id)}><Icon name={cause===r.id?'radio-button-on':'radio-button-off'} color={cause===r.id?C.gold:C.dim} size={18}/><Text style={s.body}>{r.name}</Text></Pressable>)}</View>{!isDemo&&recipients.length===0&&<Text style={s.body}>This month’s cause will be announced soon.</Text>}<Text style={[s.body,{marginBottom:20}]}>Your full available balance will be committed to this cause. Ratzon will submit the donation and record confirmation here.</Text><Button label={busy?'Submitting…':isDemo?'Simulate donation':paymentsLive?'Donate full balance':'Donate test balance'} disabled={busy||!cause||balance<=0} onPress={moveMoney}/>{!isDemo&&!paymentsLive&&<Text style={s.body}>Test funds only.</Text>}</>}
+    <Modal visible={!!sheet} transparent animationType={sheet==='auth'?'none':'fade'} onRequestClose={closeSheet}><KeyboardAvoidingView behavior={['community','community-create','community-join'].includes(sheet||'')?undefined:Platform.OS === 'ios' ? 'padding' : undefined} style={[s.modalBackdrop,['community','community-create','community-join'].includes(sheet||'')&&s.communityModalBackdrop]}><Pressable style={StyleSheet.absoluteFill} onPress={closeSheet} accessibilityLabel="Close dialog"/><Animated.View style={[s.modal,{maxHeight:'90%',width:Math.min(width-32,480)},sheet==='auth'&&{padding:20,opacity:authMotion,transform:[{translateY:authMotion.interpolate({inputRange:[0,1],outputRange:[220,0]})}]}]}>{sheet==='community-create'?<View style={s.communityCreateHeader}><Text style={s.communityCreateHeaderText}>Create Community</Text></View>:sheet!=='auth'&&<View style={[s.row,{justifyContent:'flex-end',marginBottom:sheet==='contribution'?8:24}]}>{sheet!=='contribution'&&<Text style={[s.sectionTitle,{marginRight:'auto'}]}>{sheet==='photo'?'Post your wrap':sheet==='transfer'?'Donate':sheet==='delete-account'?'Delete Account':sheet==='tefillin-goal'?'Set up Tefillin Goal':sheet==='post-menu'?'Post options':sheet==='wallet-activity'?'Wallet activity':sheet==='reports'?'Reported posts':sheet==='community-join'?'Join community':sheet==='community'?'Community':'Rules & privacy'}</Text>}<Pressable onPress={closeSheet} accessibilityRole="button" accessibilityLabel="Close" hitSlop={12}><Icon name="close"/></Pressable></View>}<ScrollView scrollEnabled={sheet!=='transfer'} bounces={false} alwaysBounceVertical={false} overScrollMode="never" keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>
+    {sheet==='community'&&<View style={{gap:12}}>{createdCommunityCode?<><Text style={s.body}>Share this code with people you want to invite. You are this community’s admin.</Text><View style={s.inviteCode}><Text selectable style={s.inviteCodeText}>{createdCommunityCode}</Text></View><Button label="Done" onPress={()=>{setCreatedCommunityCode(null);setSheet(null);}}/></>:<><Text style={s.body}>Community admins can view members’ profiles, wrap history, captions, and wrap photos, including check-ins not shared to the feed.</Text><Button label={busy?'Saving…':'Leave community'} secondary disabled={busy} onPress={()=>changeCommunity(null)}/></>}</View>}
+    {sheet==='community-create'&&<View style={{gap:12}}><TextInput accessibilityLabel="Community name" placeholder="Community name" placeholderTextColor={C.dim} style={s.input} value={newCommunityName} onChangeText={setNewCommunityName} editable={!busy}/><View><TextInput accessibilityLabel="Location" placeholder="City" placeholderTextColor={C.dim} style={s.input} value={newCommunityLocation} onChangeText={text=>{setNewCommunityLocation(text);setCommunityLocationChosen(false);}} autoCorrect={false} editable={!busy}/>{communityLocationSuggestions.length>0&&<View style={s.communitySuggestions}>{communityLocationSuggestions.map(city=><Pressable key={city} accessibilityRole="button" onPress={()=>{setNewCommunityLocation(city);setCommunityLocationChosen(true);}} style={s.communitySuggestion}><Text style={s.communitySuggestionText}>{city}</Text></Pressable>)}</View>}</View><View><TextInput accessibilityLabel="School (optional)" placeholder="School (optional)" placeholderTextColor={C.dim} style={s.input} value={newCommunitySchool} onChangeText={text=>{setNewCommunitySchool(text);setCommunitySchoolChosen(false);}} autoCorrect={false} editable={!busy}/>{communitySchoolSuggestions.length>0&&<View style={s.communitySuggestions}>{communitySchoolSuggestions.map(school=><Pressable key={school} accessibilityRole="button" onPress={()=>{setNewCommunitySchool(school);setCommunitySchoolChosen(true);}} style={s.communitySuggestion}><Text style={s.communitySuggestionText}>{school}</Text></Pressable>)}</View>}</View><Button label={busy?'Creating…':'Create a Community'} nav disabled={busy||!newCommunityName.trim()} onPress={createCommunity}/></View>}
+    {sheet==='community-join'&&<View style={{gap:12}}><TextInput accessibilityLabel="Community invite code" placeholder="6-character code" placeholderTextColor={C.dim} style={s.input} value={communityCode} onChangeText={text=>setCommunityCode(text.toUpperCase().replace(/[^A-Z2-9]/g,'').slice(0,6))} autoCapitalize="characters" autoCorrect={false} maxLength={6} editable={!busy}/><Button label={busy?'Joining…':'Join with code'} disabled={busy||communityCode.length!==6} onPress={joinCommunityByCode}/></View>}
+    {sheet==='delete-account'&&<><Text style={[s.body,{marginBottom:20}]}>Permanently delete this account, signup details, and wrap photos?</Text><Text style={[s.body,{marginBottom:20}]}>For your security, sign out and sign back in before deleting your account.</Text><View style={{gap:12}}><Button label={busy?'Deleting…':'Delete account'} disabled={busy} onPress={deleteOwnAccount}/><Button label="Cancel" secondary disabled={busy} onPress={closeSheet}/></View></>}
+    {sheet==='tefillin-goal'&&<><Text style={[s.body,{marginBottom:14}]}>Chabad on Campus may subsidize up to 50% of a pair of tefillin, up to $450. Reach out to your local Chabad to ask about eligibility and availability.</Text><Text style={[s.body,{marginBottom:20}]}>We estimate your remaining cost at $350.</Text><View style={{gap:12}}><Button label="Set $350 goal" onPress={async()=>{if(!user)return;setBusy(true);try{await AsyncStorage.setItem(`tefillin-goal-${user.id}`,'true');setGoalEnabled(true);setSheet(null);}catch(error:any){setNotice(error.message||'Could not set up the tefillin goal.');}finally{setBusy(false);}}} disabled={busy}/><Button label="Cancel" secondary onPress={closeSheet} disabled={busy}/></View></>}
+    {sheet==='post-menu'&&<View style={{gap:12}}><Button label="Hide post" secondary onPress={()=>{if(menuPost)setHiddenPostIds(ids=>[...ids,menuPost.id]);setMenuPost(null);setSheet(null);}}/><Button label="Report post" secondary onPress={()=>{const post=menuPost;setMenuPost(null);setSheet(null);if(post)void reportPost(post);}}/>{menuPost?.userId&&menuPost.userId!==user?.id&&<Button label={busy?'Blocking…':'Block user'} secondary disabled={busy} onPress={()=>{if(menuPost)void blockPostAuthor(menuPost);}}/>}{isAdmin&&<Button label={busy?'Deleting…':'Delete post'} disabled={busy||!menuPost} onPress={()=>{if(menuPost)void adminDeletePost(menuPost);}}/>}</View>}
+    {sheet==='reports'&&<View style={{gap:16}}>{reports.length===0?<Text style={s.body}>No open reports.</Text>:reports.map(report=><View key={report.id} style={[s.card,{padding:14,gap:9}]}>{report.imageUrl&&<Image source={{uri:report.imageUrl}} style={{height:170,width:'100%',borderRadius:10}} resizeMode="cover"/>}<Text style={[s.sectionTitle,{fontSize:16}]}>{report.author}</Text>{report.caption?<Text style={s.body}>{report.caption}</Text>:null}<Text style={s.tiny}>{report.reason||'No details provided'} · {new Date(report.createdAt).toLocaleDateString()}</Text><View style={{flexDirection:'row',gap:10}}><View style={{flex:1}}><Button label="Remove post" disabled={busy} onPress={()=>moderateReport(report,'delete-post')}/></View><View style={{flex:1}}><Button label="Dismiss" secondary disabled={busy} onPress={()=>moderateReport(report,'dismissed')}/></View></View></View>)}</View>}
+    {sheet==='wallet-activity'&&<View style={s.walletActivityWindow}>{walletActivity}</View>}
+    {sheet==='photo'&&<>
+      {photo&&<Image source={{uri:photo}} style={{width:'100%',height:280,borderRadius:16,marginBottom:18}} accessibilityLabel="Your captured wrap photo"/>}
+      <TextInput accessibilityLabel="Comment, up to 10 words" style={[s.input,{minHeight:80,backgroundColor:C.card,borderColor:C.line}]} placeholder="Comment (optional)" placeholderTextColor={C.dim} value={caption} onChangeText={setCaption} multiline maxLength={500} editable={!busy}/>
+      <Text accessibilityLiveRegion="polite" style={[s.tiny,{textAlign:'right',marginTop:8,color:captionWords>10?'#FF8C8C':C.muted}]}>{captionWords}/10 words{captionWords>10?' · Please shorten your comment':''}</Text>
+      <View style={{marginTop:20}}><Button label={busy?'Posting…':'Post to community'} onPress={postPhoto} disabled={!photo||busy||captionWords>10||postingBlocked||completed}/></View>
+    </>}
+    {sheet==='contribution'&&<><View style={[s.row,{gap:10,marginBottom:20}]}>{['1.80','5','10','18'].map(v=><Pressable key={v} onPress={()=>setAmount(v)} style={[s.amountChip,amount===v&&{borderColor:C.gold,backgroundColor:C.raised}]}><Text style={{color:amount===v?C.gold:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'500'}}>${v}</Text></Pressable>)}</View><TextInput accessibilityLabel="Monthly contribution in dollars" style={[s.input,{backgroundColor:C.card,borderColor:C.line}]} value={amount} onChangeText={setAmount} keyboardType="decimal-pad"/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:coversStripeFee}} disabled={busy} onPress={()=>setCoversStripeFee(value=>!value)} style={s.stripeFeeOption}><Icon name={coversStripeFee?'checkbox':'square-outline'} size={22} color={C.text}/><View style={{flex:1}}><Text style={s.stripeFeeTitle}>Cover Stripe processing fee</Text><Text style={s.tiny}>{coversStripeFee?`You will be charged $${(chargeWithStripeFeeCovered(Math.max(180,Math.min(1800,Math.round(Number(amount)*100)||180)))/100).toFixed(2)} so your selected amount reaches your wallet.`:'Your wallet receives your contribution less Stripe’s 30¢ + 3% fee.'}</Text></View></Pressable><Text style={[s.tiny,{marginVertical:18}]}>$1.80–$18 per month. Changes update at the next billing cycle.</Text><Button label={busy?'Opening checkout…':isDemo?'Set demo contribution':paymentsLive?'Subscribe':'Subscribe in test mode'} disabled={busy} onPress={saveContribution}/>{!isDemo&&membership&&<Pressable accessibilityRole="button" disabled={busy||membership.cancel_at_period_end} onPress={async()=>{try{setBusy(true);await billingAction('cancel');await refreshLive();setNotice('Renewal canceled. Your paid month remains enrolled.');}catch(e:any){setNotice(e.message);}finally{setBusy(false);}}} style={({pressed})=>[s.cancelRenewal,{opacity:busy||membership.cancel_at_period_end?.45:pressed?.65:1}]}><Text style={s.cancelRenewalText}>{membership.cancel_at_period_end?'Renewal canceled':'Cancel renewal'}</Text></Pressable>}<Text style={[s.tiny,{marginTop:14,textAlign:'center'}]}>{isDemo?'No charge will be made.':paymentsLive?'Payment is verified before enrollment. Wallet credits use the actual Stripe fee.':'Stripe test mode. Test enrollments and balances stay separate.'}</Text></>}
+    {sheet==='transfer'&&<><Text style={[s.bigMoney,{marginBottom:20}]}>{money(balance)}</Text><View style={{gap:8,marginBottom:20}}>{(isDemo?[{id:'United Hatzalah',name:'United Hatzalah'},{id:'American Friends of Magen David Adom',name:'American Friends of Magen David Adom'},{id:'Leket Israel',name:'Leket Israel'},{id:'Friends of the IDF',name:'Friends of the IDF'},{id:'Jewish National Fund-USA',name:'Jewish National Fund-USA'}]:recipients).map(r=><Pressable key={r.id} accessibilityRole="radio" accessibilityState={{checked:cause===r.id}} style={[s.causeOption,cause===r.id&&{borderColor:C.gold}]} onPress={()=>setCause(r.id)}><Icon name={cause===r.id?'radio-button-on':'radio-button-off'} color={cause===r.id?C.gold:C.dim} size={18}/><Text style={s.body}>{r.name}</Text></Pressable>)}</View>{!isDemo&&recipients.length===0&&<Text style={s.body}>This month’s cause will be announced soon.</Text>}<Text style={[s.body,{marginBottom:20}]}>Your full available balance will be committed to this cause. Ratzon will submit the donation and record confirmation here.</Text><Button label={busy?'Submitting…':isDemo?'Simulate donation':paymentsLive?'Donate full balance':'Donate test balance'} disabled={busy||!cause||balance<=0} onPress={moveMoney}/>{!isDemo&&!paymentsLive&&<Text style={s.body}>Test funds only.</Text>}</>}
 
-    {sheet==='auth'&&<>{!supabase&&<Text style={[s.noticeInline,{marginBottom:20}]}>Live signup is being connected. The full demo is ready to explore.</Text>}{signup&&<TextInput accessibilityLabel="Your first name" placeholder="Your first name" placeholderTextColor={C.dim} style={[s.input,{marginBottom:12}]} value={name} onChangeText={setName} autoComplete="given-name"/>}<TextInput accessibilityLabel="Email address" placeholder="Email address" placeholderTextColor={C.dim} style={[s.input,{marginBottom:12}]} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoComplete="email"/><TextInput accessibilityLabel="Password" placeholder="Password (8+ characters)" placeholderTextColor={C.dim} style={[s.input,{marginBottom:20}]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup?'new-password':'current-password'}/><Button label={busy?'Please wait…':signup?'Create account':'Sign in'} disabled={busy} onPress={authenticate}/><Pressable onPress={()=>setSignup(!signup)} style={{padding:20,alignItems:'center'}}><Text style={s.textLink}>{signup?'Already a member? Sign in':'New here? Create an account'}</Text></Pressable></>}
-    {sheet==='rules'&&<>{[{title:'A full month of intention',body:'Choose $5 or more; $18 is recommended. A paid challenge begins on the first day of a calendar month. Everyone contributes before the month starts.'},{title:'One photo, every required day',body:'Post a photo of yourself wearing tefillin each day, using your account’s timezone. Saturdays are excluded. Only one check-in per date is accepted; past dates cannot be backfilled.'},{title:'Your share of the pool',body:'Miss one required day and your contribution goes to the reward pool. After payment processing fees are deducted from the full pool, finishers divide the remaining money in proportion to their contributions. Fees may reduce the amount of principal returned.'},{title:'Rewards, over time',body:'Your returned contributions and earnings stay in your giving balance until you donate. Donations commit the full available balance; Ratzon fulfills them on your behalf. Pending challenge contributions cannot be donated before settlement. The proposed no-finisher rule is to roll the forfeited pool forward; this needs confirmation before real-money launch. Processing fees are deducted before distribution. Refunds and disputes pause affected funds for review.'},{title:'Calendar details',body:'This preview implements the requested Saturday exemption only. Holiday, Chol Hamoed, and daylight cutoff rules need to be finalized before live challenges.'},{title:'Photo privacy',body:'Demo photos stay in local device storage. With a connected account, photos are stored in a private Supabase bucket. Shared photos are visible to signed-in members through temporary links. Photo authenticity review is not yet automated.'},{title:'About this preview',body:'The app clearly labels test-mode payments. Live mode charges real money after you accept monthly billing. Enrollment requires server-confirmed payment. Donation requests remain pending until Ratzon records fulfillment. These confirmations are not tax receipts.'}].map(item=><View key={item.title} style={{marginBottom:23}}><Text style={[s.body,{color:C.text,fontWeight:'600',marginBottom:7}]}>{item.title}</Text><Text style={s.body}>{item.body}</Text></View>)}</>}
-    </ScrollView></View>{notice&&<View accessibilityRole="alert" style={s.modalToast}><Text style={[s.body,{color:C.text}]}>{notice}</Text></View>}</KeyboardAvoidingView></Modal>
-    {!!notice&&!sheet&&<Pressable onPress={()=>setNotice('')} accessibilityRole="alert" style={[s.toast,{bottom:showCover?30:100,left:20,right:20}]}><Icon name="information-circle-outline" color={C.gold}/><Text style={[s.body,{flex:1,color:C.text}]}>{notice}</Text><Icon name="close" size={17}/></Pressable>}
-  </SafeAreaView>;
+    {sheet==='auth'&&<View style={{gap:12}}>
+      <TextInput accessibilityLabel="Email address" placeholder="Email address" placeholderTextColor={C.dim} style={[s.input,{backgroundColor:C.card,borderColor:C.line}]} value={email} onChangeText={setEmail} keyboardType="email-address" autoCapitalize="none" autoCorrect={false} autoComplete="email" editable={!busy}/>
+      <TextInput accessibilityLabel="Password" placeholder={signup?'Password (8+ characters)':'Password'} placeholderTextColor={C.dim} style={[s.input,{backgroundColor:C.card,borderColor:C.line}]} value={password} onChangeText={setPassword} secureTextEntry autoComplete={signup?'new-password':'current-password'} editable={!busy}/>
+      {signup&&<Pressable accessibilityRole="checkbox" accessibilityState={{checked:signupAgeConfirmed}} disabled={busy} onPress={()=>setSignupAgeConfirmed(value=>!value)} style={[s.row,{minHeight:44,gap:10}]}><Icon name={signupAgeConfirmed?'checkbox':'square-outline'} color={C.text}/><Text style={[s.body,{flex:1}]}>I confirm that I am at least 13 years old.</Text></Pressable>}
+      <Button label={busy?'Please wait…':signup?'Sign up':'Log in'} disabled={busy||(signup&&!signupAgeConfirmed)} onPress={authenticate}/>
+      <View pointerEvents={busy?'none':'auto'} accessibilityState={{busy}} style={{opacity:busy?.5:1}}>
+        <Pressable accessibilityRole="button" accessibilityLabel={signup?'Sign up with Apple':'Sign in with Apple'} disabled={busy||(signup&&!signupAgeConfirmed)} onPress={signInWithApple} style={[s.appleButton,s.authOption,{opacity:busy||(signup&&!signupAgeConfirmed)?0.45:1}]}><Icon name="logo-apple" color={C.text} size={22}/><Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:17,color:C.text,fontWeight:'600'}}>{signup?'Sign up with Apple':'Sign in with Apple'}</Text></Pressable>
+      </View>
+    </View>}
+    {sheet==='rules'&&<>{[{body:'Privacy: Ratzon collects the information you provide for your account—name, phone number, school, birthday, tradition, optional community membership, and wrap photos and captions. We use it to operate your account, manage contributions, and provide support. Shared wrap posts appear in the Global feed for signed-in members. If you join a community, its designated admins can view your profile, complete wrap history, captions, and photos, including unshared check-ins, for challenge administration and support.'},{body:'Payment information is handled by Stripe and Apple Pay. Ratzon does not store card numbers. We retain records required for payment, fraud prevention, tax, or legal obligations; other account data, including shared posts and stored photos, is deleted when you delete your account.'},{body:'Community safety: you can report a post or block its author from the post options menu. Blocking hides that person’s posts from your feeds. Ratzon reviews reports and can remove content or restrict an account. Contact jared@ratzonapp.com for privacy, safety, or account concerns.'},{body:'Rules: you must be at least 13. Post only a new photo you have the right to share. Do not post unlawful, abusive, sexually explicit, threatening, or deceptive content. Shabbat and exempt Jewish holidays do not require a check-in.'},{body:'Account deletion: Settings includes Delete account. It removes your profile, onboarding details, posts, and stored photos. Any recurring Stripe contribution is canceled before deletion. Payment records required by law may be retained; active donations or disputes may need support review.'}].map((item,index)=><View key={index} style={{marginBottom:23}}><Text style={s.body}>{item.body}</Text></View>)}<Pressable accessibilityRole="link" onPress={()=>Linking.openURL('https://ratzonapp.com/privacy.html')}><Text style={[s.textLink,{textAlign:'center'}]}>View full privacy policy</Text></Pressable></>}
+    </ScrollView></Animated.View>{notice&&<View accessibilityRole="alert" style={[s.modalToast,{backgroundColor:C.card,borderColor:C.line}]}><Text style={[s.body,{color:C.text}]}>{notice}</Text></View>}</KeyboardAvoidingView></Modal>
+    {!!notice&&!sheet&&<Pressable onPress={()=>setNotice('')} accessibilityRole="alert" style={[s.toast,{bottom:showCover?30:100,left:20,right:20,backgroundColor:C.card,borderColor:C.line}]}><Icon name="information-circle-outline" color={C.gold}/><Text style={[s.body,{flex:1,color:C.text}]}>{notice}</Text><Icon name="close" size={17}/></Pressable>}
+  </SafeAreaView>{!showCover&&<Animated.View pointerEvents={mainAssetsReady?'none':'auto'} style={[StyleSheet.absoluteFill,{backgroundColor:C.bg,opacity:readinessCover}]}/>}</View>}</View>{<WelcomeReveal visible={welcomeReveal} preparing={welcomePreparing} ready={onboardingState==='complete'&&homeLaidOut&&mainAssetsReady} onComplete={()=>{setWelcomePreparing(false);setWelcomeReveal(false);}}/>}</>;
 }
 export default function App() { return <SafeAreaProvider><AppContent/></SafeAreaProvider>; }
-const s = StyleSheet.create({
-  appName:{fontSize:20,fontWeight:'700',letterSpacing:-.6,color:C.gold},
-  cover:{flex:1,paddingHorizontal:28,paddingBottom:20},
-  coverCenter:{flex:1,justifyContent:'center',alignItems:'center',paddingVertical:28},
+let s = makeStyles();
+function makeStyles() { const base = StyleSheet.create({
+  todayLayout:{flex:1,justifyContent:'center',paddingBottom:8},todayRestNotice:{minHeight:57,borderRadius:14,backgroundColor:C.raised,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,marginBottom:17,paddingHorizontal:18},todayRestText:{includeFontPadding:false,textAlignVertical:'center',fontSize:17,fontWeight:'700',color:C.text},todayHero:{alignItems:'center',paddingBottom:26},todayRing:{borderWidth:1,alignItems:'center',justifyContent:'center',padding:13},todayRingInner:{width:'100%',height:'100%',alignItems:'center',justifyContent:'center',borderWidth:1,borderColor:'#FFFFFF88'},todayPrimary:{minHeight:57,borderRadius:14,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:10,paddingHorizontal:18},todayPrimaryText:{includeFontPadding:false,textAlignVertical:'center',fontSize:17,fontWeight:'700'},todayWeek:{flexDirection:'row',justifyContent:'space-between',marginTop:30,paddingHorizontal:2},todayWeekItem:{alignItems:'center',gap:8},todayWeekLabel:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,fontWeight:'600'},todayWeekCircle:{width:35,height:35,borderRadius:18,borderWidth:1,alignItems:'center',justifyContent:'center'},todayWeekDate:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,fontWeight:'600'},todayNote:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,lineHeight:18,textAlign:'center',marginTop:22,paddingHorizontal:8},
+  appName:{includeFontPadding:false,textAlignVertical:'center',fontSize:20,fontWeight:'700',letterSpacing:-.6,color:C.gold},
+  cover:{flex:1,paddingHorizontal:28,paddingBottom:4,justifyContent:'flex-end'},
+  coverCenter:{position:'absolute',top:'50%',left:0,right:0,alignItems:'center'},
   coverMark:{height:210,width:210,alignItems:'center',justifyContent:'center',marginBottom:40},
   markBox:{position:'absolute',width:34,height:34,backgroundColor:C.gold,borderRadius:2,transform:[{rotate:'-12deg'}]},
-  coverTitle:{fontSize:45,lineHeight:47,color:C.gold,fontWeight:'900',letterSpacing:-1.8,textAlign:'center'},
-  appleButton:{height:54,backgroundColor:'#fff',borderRadius:12,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:8},
+  coverTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:45,lineHeight:47,color:C.gold,fontWeight:'900',letterSpacing:-1.8,textAlign:'center'},
+  getStarted:{height:56,backgroundColor:'#062B60',borderRadius:14,alignItems:'center',justifyContent:'center'},
+  getStartedText:{includeFontPadding:false,textAlignVertical:'center',fontSize:21,color:'#fff',fontWeight:'600'},
+  authOption:{height:44,minHeight:44,borderRadius:22},
+  appleButton:{backgroundColor:C.card,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:8},
   dailyCard:{backgroundColor:C.card,borderRadius:22,padding:24},
   dailyEmblem:{height:110,alignItems:'center',justifyContent:'center'},
-  dailyTitle:{fontSize:29,fontWeight:'700',letterSpacing:-.8,color:C.text,textAlign:'center',marginTop:5,marginBottom:27},
+  dailyTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:29,fontWeight:'700',letterSpacing:-.8,color:C.text,textAlign:'center',marginTop:5,marginBottom:27},
   weekCircle:{height:32,width:32,borderRadius:16,backgroundColor:'#191B20',alignItems:'center',justifyContent:'center'},
 
-  app:{flex:1,width:'100%',maxWidth:480,alignSelf:'center'},row:{flexDirection:'row',alignItems:'center'},sidebar:{width:238,borderRightWidth:1,borderRightColor:'#272B23',paddingTop:32,backgroundColor:'#131610'},brandIcon:{width:35,height:40,alignItems:'center',justifyContent:'center'},brandName:{color:C.text,fontSize:26,fontWeight:'600',letterSpacing:-1.1},brandSub:{color:C.dim,fontSize:7,letterSpacing:1.5,marginTop:4},navItem:{marginHorizontal:15,paddingVertical:15,paddingHorizontal:16,borderRadius:10,flexDirection:'row',alignItems:'center',gap:15},navActive:{backgroundColor:'#292B21'},navText:{color:C.muted,fontSize:14,fontWeight:'500'},sidebarNote:{borderTopWidth:1,borderBottomWidth:1,borderColor:C.line,paddingVertical:24},topbar:{height:70,paddingHorizontal:24,alignItems:'center',justifyContent:'center'},breadcrumb:{fontSize:12,color:C.muted},demoChip:{flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:'#49402D',borderRadius:6,paddingHorizontal:9,paddingVertical:6},content:{paddingHorizontal:24,paddingTop:12,paddingBottom:30},pageHeading:{marginBottom:30,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},eyebrow:{fontSize:10,fontWeight:'600',letterSpacing:1.7,color:C.muted,marginBottom:14},title:{fontSize:32,lineHeight:40,letterSpacing:-1,fontWeight:'700',color:C.text,marginBottom:24},subtitle:{fontSize:14,color:C.muted,marginTop:14,lineHeight:22},headingMark:{width:52,height:52,alignItems:'center',justifyContent:'center',borderRadius:26,borderWidth:1,borderColor:C.line},columns:{flexDirection:'row',alignItems:'flex-start',gap:22},mainColumn:{flex:1,gap:0,minWidth:0,width:'100%'},sideColumn:{width:304,gap:20},hero:{borderRadius:19,padding:24,borderWidth:1,borderColor:'#3B4632',overflow:'hidden'},heroTitle:{color:C.text,fontSize:39,lineHeight:42,letterSpacing:-1.2,fontWeight:'500'},body:{fontSize:15,lineHeight:23,color:C.muted},caption:{fontSize:14,color:C.muted,lineHeight:20},tiny:{fontSize:12,color:C.muted,lineHeight:18},button:{minHeight:54,borderRadius:12,backgroundColor:C.gold,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9,paddingHorizontal:13},buttonText:{fontSize:16,color:'#fff',fontWeight:'600'},secondary:{backgroundColor:'#171A20',borderWidth:1,borderColor:'#292D35'},tag:{paddingHorizontal:9,paddingVertical:6,borderRadius:20,flexDirection:'row',alignItems:'center',gap:5},tagText:{fontSize:9,fontWeight:'500'},dot:{width:5,height:5,borderRadius:4},card:{backgroundColor:C.card,borderWidth:1,borderColor:'#24272D',borderRadius:16,padding:22},statRow:{flexDirection:'row',gap:15,marginTop:18},statCard:{flex:1,padding:19},statNumber:{color:C.text,fontSize:30,letterSpacing:-1,fontWeight:'600',marginBottom:5},statUnit:{fontSize:12,fontWeight:'400',color:C.muted,letterSpacing:0},sectionHead:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:28,marginBottom:15},sectionTitle:{fontSize:15,color:C.text,fontWeight:'600',letterSpacing:-.2},textLink:{fontSize:14,color:C.gold,fontWeight:'500'},communityTeaser:{flexDirection:'row',gap:13,alignItems:'center',padding:19},avatarStack:{flexDirection:'row'},avatar:{width:39,height:39,borderRadius:22,alignItems:'center',justifyContent:'center'},avatarText:{fontSize:12,fontWeight:'600',color:C.text},quote:{alignItems:'center',paddingVertical:35},quoteLine:{height:1,width:25,backgroundColor:C.gold,marginBottom:20},quoteText:{color:'#BBC1B2',fontSize:14,fontStyle:'italic',textAlign:'center'},weekLabels:{flexDirection:'row',marginBottom:9},weekLabel:{width:'14.2857%',textAlign:'center',fontSize:9,color:C.dim},calendar:{flexDirection:'row',flexWrap:'wrap'},dayCell:{width:'14.2857%',height:35,alignItems:'center',justifyContent:'center'},dayInner:{width:28,height:28,borderRadius:14,alignItems:'center',justifyContent:'center'},divider:{height:1,backgroundColor:C.line,marginVertical:20},footer:{marginTop:26,paddingTop:22,borderTopWidth:1,borderColor:'#272B23',flexDirection:'row',justifyContent:'space-between',gap:10},bottomBar:{borderTopWidth:1,borderColor:C.line,backgroundColor:'#000'},bottomTab:{alignItems:'center',justifyContent:'center',minWidth:58,paddingVertical:11},filter:{paddingVertical:10,paddingHorizontal:18,borderRadius:22,backgroundColor:C.card},feedGrid:{flexDirection:'row',flexWrap:'wrap',gap:20,justifyContent:'space-between'},postCard:{padding:0,overflow:'hidden'},postPhoto:{width:'100%',height:300,resizeMode:'cover'},samplePost:{height:240,backgroundColor:'#071326',alignItems:'center',justifyContent:'center'},sampleQuote:{color:C.text,fontSize:22,textAlign:'center',letterSpacing:-.5,lineHeight:28,marginTop:-12},bigMoney:{color:C.text,fontSize:40,letterSpacing:-1.5,fontWeight:'500'},transaction:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:16},transactionIcon:{width:37,height:37,borderRadius:12,backgroundColor:C.raised,alignItems:'center',justifyContent:'center'},modalBackdrop:{flex:1,backgroundColor:'#000000BB',alignItems:'center',justifyContent:'flex-end',paddingTop:50,paddingBottom:24},modal:{padding:25,borderRadius:22,borderWidth:1,borderColor:'#30343D',backgroundColor:'#101114'},input:{backgroundColor:'#07080A',borderWidth:1,borderColor:'#292D35',borderRadius:10,padding:14,color:C.text,fontSize:15,minHeight:50},photoPlaceholder:{height:220,borderRadius:14,borderWidth:1,borderStyle:'dashed',borderColor:'#30343D',alignItems:'center',justifyContent:'center',marginBottom:18,backgroundColor:'#090C12'},amountChip:{flex:1,borderWidth:1,borderColor:C.line,borderRadius:10,minHeight:67,alignItems:'center',justifyContent:'center'},causeOption:{flexDirection:'row',gap:12,alignItems:'center',padding:12,borderWidth:1,borderColor:C.line,borderRadius:9},noticeInline:{fontSize:12,lineHeight:19,color:C.gold,padding:12,borderRadius:9,backgroundColor:'#11254A'},toast:{position:'absolute',borderWidth:1,borderColor:'#254878',backgroundColor:'#101C30',borderRadius:13,padding:16,flexDirection:'row',alignItems:'center',gap:12,maxWidth:700,alignSelf:'center'},modalToast:{position:'absolute',bottom:10,left:20,right:20,backgroundColor:'#101C30',padding:14,borderRadius:12,borderWidth:1,borderColor:'#254878'},
-});
+  app:{flex:1,width:'100%',maxWidth:480,alignSelf:'center'},row:{flexDirection:'row',alignItems:'center'},sidebar:{width:238,borderRightWidth:1,borderRightColor:'#272B23',paddingTop:32,backgroundColor:'#131610'},brandIcon:{width:35,height:40,alignItems:'center',justifyContent:'center'},brandName:{color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:26,fontWeight:'600',letterSpacing:-1.1},brandSub:{color:C.dim,includeFontPadding:false,textAlignVertical:'center',fontSize:7,letterSpacing:1.5,marginTop:4},navItem:{marginHorizontal:15,paddingVertical:15,paddingHorizontal:16,borderRadius:10,flexDirection:'row',alignItems:'center',gap:15},navActive:{backgroundColor:'#292B21'},navText:{color:C.muted,includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'500'},sidebarNote:{borderTopWidth:1,borderBottomWidth:1,borderColor:C.line,paddingVertical:24},topbar:{minHeight:96,paddingHorizontal:24,paddingVertical:20,flexDirection:'row',alignItems:'center',justifyContent:'flex-start'},pageTitle:{includeFontPadding:false,textAlignVertical:'center',fontFamily:DISPLAY_FONT,fontSize:34,lineHeight:40,fontWeight:'900',letterSpacing:-.9,color:C.text,flexShrink:1,textAlign:'left'},breadcrumb:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,color:C.muted},demoChip:{flexDirection:'row',alignItems:'center',gap:6,borderWidth:1,borderColor:'#49402D',borderRadius:6,paddingHorizontal:9,paddingVertical:6},content:{paddingHorizontal:24,paddingTop:12,paddingBottom:48},pageHeading:{marginBottom:30,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},eyebrow:{includeFontPadding:false,textAlignVertical:'center',fontSize:10,fontWeight:'600',letterSpacing:1.7,color:C.muted,marginBottom:14},title:{includeFontPadding:false,textAlignVertical:'center',fontSize:32,lineHeight:40,letterSpacing:-1,fontWeight:'700',color:C.text,marginBottom:24},headingMark:{width:52,height:52,alignItems:'center',justifyContent:'center',borderRadius:26,borderWidth:1,borderColor:C.line},columns:{flexDirection:'row',alignItems:'flex-start',gap:22},mainColumn:{flex:1,gap:0,minWidth:0,width:'100%'},sideColumn:{width:304,gap:20},hero:{borderRadius:19,padding:24,borderWidth:1,borderColor:'#3B4632',overflow:'hidden'},heroTitle:{color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:39,lineHeight:42,letterSpacing:-1.2,fontWeight:'500'},body:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,lineHeight:23,color:C.muted},caption:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.muted,lineHeight:20},tiny:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,color:C.muted,lineHeight:18},button:{minHeight:54,borderRadius:12,backgroundColor:C.gold,flexDirection:'row',alignItems:'center',justifyContent:'center',gap:9,paddingHorizontal:13},buttonText:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,color:'#fff',fontWeight:'600'},secondary:{backgroundColor:'#171A20',borderWidth:1,borderColor:'#292D35'},tag:{paddingHorizontal:9,paddingVertical:6,borderRadius:20,flexDirection:'row',alignItems:'center',gap:5},tagText:{includeFontPadding:false,textAlignVertical:'center',fontSize:9,fontWeight:'500'},dot:{width:5,height:5,borderRadius:4},card:{backgroundColor:C.card,borderWidth:1,borderColor:C.line,borderRadius:20,padding:22},statRow:{flexDirection:'row',gap:15,marginTop:18},statCard:{flex:1,padding:19},statNumber:{color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:30,letterSpacing:-1,fontWeight:'600',marginBottom:5},statUnit:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,fontWeight:'400',color:C.muted,letterSpacing:0},sectionHead:{flexDirection:'row',justifyContent:'space-between',alignItems:'center',marginTop:28,marginBottom:15},sectionTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,color:C.text,fontWeight:'600',letterSpacing:-.2},textLink:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.gold,fontWeight:'500'},communityTeaser:{flexDirection:'row',gap:13,alignItems:'center',padding:19},avatarStack:{flexDirection:'row'},avatar:{width:39,height:39,borderRadius:22,alignItems:'center',justifyContent:'center'},avatarText:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,fontWeight:'600',color:C.text},quote:{alignItems:'center',paddingVertical:35},quoteLine:{height:1,width:25,backgroundColor:C.gold,marginBottom:20},quoteText:{color:'#BBC1B2',includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontStyle:'italic',textAlign:'center'},weekLabels:{flexDirection:'row',marginBottom:9},weekLabel:{width:'14.2857%',textAlign:'center',includeFontPadding:false,textAlignVertical:'center',fontSize:9,color:C.dim},calendar:{flexDirection:'row',flexWrap:'wrap'},dayCell:{width:'14.2857%',height:35,alignItems:'center',justifyContent:'center'},dayInner:{width:28,height:28,borderRadius:14,alignItems:'center',justifyContent:'center'},divider:{height:1,backgroundColor:C.line,marginVertical:20},footer:{alignItems:'center',marginTop:26,paddingTop:22,borderTopWidth:1,borderColor:'#272B23',flexDirection:'row',justifyContent:'space-between',gap:10},bottomBar:{borderTopWidth:1,borderColor:C.line,backgroundColor:C.bg},bottomTab:{flex:1,alignItems:'center',justifyContent:'center',paddingTop:14,paddingBottom:10},centerTab:{paddingTop:0,marginTop:-23},todayCircle:{height:64,width:64,borderRadius:32,borderWidth:5,borderColor:C.bg,alignItems:'center',justifyContent:'center'},filter:{paddingVertical:10,paddingHorizontal:18,alignItems:'center',justifyContent:'center',borderRadius:22,backgroundColor:C.card},feedGrid:{flexDirection:'row',flexWrap:'wrap',gap:20,justifyContent:'space-between'},postCard:{padding:0,overflow:'hidden'},postPhoto:{width:'100%',height:300,resizeMode:'cover'},samplePost:{height:240,backgroundColor:'#071326',alignItems:'center',justifyContent:'center'},sampleQuote:{color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:22,textAlign:'center',letterSpacing:-.5,lineHeight:28,marginTop:-12},bigMoney:{color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:40,letterSpacing:-1.5,fontWeight:'500'},transaction:{flexDirection:'row',alignItems:'center',gap:12,paddingVertical:16,},transactionIcon:{width:37,height:37,borderRadius:12,backgroundColor:C.raised,alignItems:'center',justifyContent:'center'},modalBackdrop:{flex:1,backgroundColor:'#000000BB',alignItems:'center',justifyContent:'flex-end',paddingTop:50,paddingBottom:24},modal:{padding:25,borderRadius:22,borderWidth:1,borderColor:'#30343D',backgroundColor:C.card},input:{backgroundColor:'#07080A',borderWidth:1,borderColor:'#292D35',borderRadius:10,padding:14,color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:15,minHeight:50},photoPlaceholder:{height:220,borderRadius:14,borderWidth:1,borderStyle:'dashed',borderColor:'#30343D',alignItems:'center',justifyContent:'center',marginBottom:18,backgroundColor:'#090C12'},amountChip:{flex:1,borderWidth:1,borderColor:C.line,borderRadius:10,minHeight:67,alignItems:'center',justifyContent:'center'},causeOption:{flexDirection:'row',gap:12,alignItems:'center',padding:12,borderWidth:1,borderColor:C.line,borderRadius:9},noticeInline:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,lineHeight:19,color:C.gold,padding:12,borderRadius:9,backgroundColor:'#11254A'},toast:{position:'absolute',borderWidth:1,borderColor:'#254878',backgroundColor:'#101C30',borderRadius:13,padding:16,flexDirection:'row',alignItems:'center',gap:12,maxWidth:700,alignSelf:'center'},modalToast:{position:'absolute',bottom:10,left:20,right:20,backgroundColor:'#101C30',padding:14,borderRadius:12,borderWidth:1,borderColor:'#254878'},
+}); return StyleSheet.create({...base,
+  bottomTab:{...base.bottomTab,paddingTop:5,paddingBottom:2},
+  tabLayer:{...StyleSheet.absoluteFill},
+  communityBrand:{flexDirection:'row',alignItems:'flex-end',justifyContent:'center',gap:2,height:50},
+  communityWordmark:{width:112,height:30},
+  communityLayout:{gap:18},
+  communitySelector:{flexDirection:'row',borderRadius:15,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:4},
+  communitySelectorOption:{flex:1,minHeight:43,borderRadius:11,alignItems:'center',justifyContent:'center'},
+  communitySelectorSelected:{backgroundColor:C.text},
+  communitySelectorText:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'700',color:C.text},
+  communitySelectorSelectedText:{color:'#FFFFFF'},
+  communityMembershipHeader:{alignItems:'center',gap:10},
+  communityMembershipControls:{flexDirection:'row',alignItems:'center',justifyContent:'center',gap:16},
+  communityGroupName:{includeFontPadding:false,textAlignVertical:'center',fontFamily:DISPLAY_FONT,fontSize:25,lineHeight:30,fontWeight:'900',letterSpacing:-.5,color:C.text,textAlign:'center'},
+  communityManageLink:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'700',color:C.text},
+  communityMembershipActions:{width:'100%',gap:10},
+  floatingInviteButton:{position:'absolute',left:24,bottom:22,width:54,height:54,borderRadius:27,backgroundColor:C.text,alignItems:'center',justifyContent:'center',elevation:6,shadowColor:'#062B60',shadowOpacity:.25,shadowRadius:8,shadowOffset:{width:0,height:3}},
+  floatingInviteText:{includeFontPadding:false,textAlignVertical:'center',fontSize:32,lineHeight:34,fontWeight:'400',color:'#fff'},
+  communityModalOption:{minHeight:55,paddingHorizontal:16,borderRadius:12,borderWidth:1,borderColor:C.line,backgroundColor:C.card,flexDirection:'row',alignItems:'center',justifyContent:'space-between'},
+  communityModalBackdrop:{justifyContent:'flex-start',paddingTop:96},
+  communityCreateHeader:{minHeight:42,alignItems:'center',justifyContent:'center',marginBottom:20},
+  communityCreateHeaderText:{includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'800',color:C.text,textAlign:'center'},
+  communitySuggestions:{marginTop:6,borderWidth:1,borderColor:C.line,borderRadius:10,backgroundColor:C.card,overflow:'hidden'},
+  communitySuggestion:{minHeight:44,paddingHorizontal:14,justifyContent:'center',borderBottomWidth:1,borderBottomColor:C.line},
+  communitySuggestionText:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.text},
+  communityModalSelected:{borderColor:C.text,backgroundColor:C.raised},
+  communityModalText:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,fontWeight:'600',color:C.text},
+  inviteCode:{minHeight:64,borderRadius:12,backgroundColor:C.raised,borderWidth:1,borderColor:C.line,alignItems:'center',justifyContent:'center'},
+  inviteCodeText:{includeFontPadding:false,textAlignVertical:'center',fontSize:28,letterSpacing:5,fontWeight:'700',color:C.text},
+  communityFeed:{gap:18},
+  communityPost:{borderRadius:22,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:20,overflow:'hidden'},
+  communityPostHeader:{flexDirection:'row',alignItems:'center',gap:12,marginBottom:16},
+  communityAvatar:{width:50,height:50,borderRadius:25,alignItems:'center',justifyContent:'center'},
+  communityAvatarText:{includeFontPadding:false,textAlignVertical:'center',fontSize:17,fontWeight:'700',color:C.text},
+  communityName:{includeFontPadding:false,textAlignVertical:'center',fontSize:22,fontWeight:'700',color:C.text},
+  communityDate:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.muted,marginTop:3},
+  communityPhoto:{width:'100%',height:250,borderRadius:16,resizeMode:'cover'},
+  communityPostFooter:{paddingTop:16},
+  communityCaption:{includeFontPadding:false,textAlignVertical:'center',fontSize:18,lineHeight:25,color:C.text},
+  communityLike:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',marginTop:14,paddingVertical:3},
+  communityLikes:{includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'600',color:C.text},
+  communityEmpty:{borderRadius:22,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:35},
+  accountHome:{gap:18,paddingBottom:18},
+  accountName:{includeFontPadding:false,textAlignVertical:'center',fontSize:30,lineHeight:37,fontWeight:'700',letterSpacing:-.7,color:C.text,textAlign:'center'},
+  accountWallet:{borderRadius:24,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:25,alignItems:'center'},
+  walletLabelRow:{flexDirection:'row',alignItems:'center',gap:5},
+  accountWalletLabel:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,fontWeight:'700',color:C.text},
+  accountBalance:{includeFontPadding:false,textAlignVertical:'center',fontSize:48,lineHeight:58,fontWeight:'700',letterSpacing:-1.8,color:C.text,marginTop:10},
+  accountGoal:{width:'100%',marginTop:18},
+  accountGoalLabel:{includeFontPadding:false,textAlignVertical:'center',fontSize:13,fontWeight:'600',color:C.muted},
+  accountGoalTrack:{height:8,width:'100%',borderRadius:4,backgroundColor:C.line,overflow:'hidden',marginTop:9},
+  accountGoalProgress:{height:'100%',borderRadius:4,backgroundColor:C.gold},
+  accountDonate:{marginTop:24,minHeight:52,borderRadius:14,backgroundColor:C.text,alignItems:'center',justifyContent:'center',flexDirection:'row',gap:9,paddingHorizontal:22},
+  accountDonateText:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,fontWeight:'700',color:'#FFFFFF'},
+  accountSettings:{minHeight:58,borderRadius:16,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',paddingHorizontal:19,flexDirection:'row',alignItems:'center',gap:12},
+  accountSettingsText:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,fontWeight:'700',color:C.text,flex:1},
+  settingsBack:{width:35,height:35,alignItems:'center',justifyContent:'center',marginRight:5},
+  settingsPage:{gap:12,paddingTop:0,paddingBottom:0},
+  cancelRenewal:{alignSelf:'center',minHeight:36,justifyContent:'center',marginTop:8,paddingHorizontal:12},
+  cancelRenewalText:{includeFontPadding:false,textAlignVertical:'center',fontSize:13,fontWeight:'600',color:C.muted,textDecorationLine:'underline'},
+  stripeFeeOption:{flexDirection:'row',alignItems:'flex-start',gap:10,marginTop:16},
+  stripeFeeTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'700',color:C.text,marginBottom:2},
+  settingsSection:{borderWidth:1,borderColor:C.line,borderRadius:18,backgroundColor:C.card,overflow:'hidden'},
+  settingsSectionTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'700',color:C.text,paddingHorizontal:18,paddingTop:18,paddingBottom:8},
+  settingsInfoRow:{minHeight:55,paddingHorizontal:18,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:18,borderTopWidth:1,borderTopColor:C.line},
+  settingsInfoLabel:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.muted},
+  settingsInfoValue:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'600',color:C.text,textAlign:'right',flexShrink:1},
+  settingsInlineInput:{flex:1,minWidth:0,includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'600',color:C.text,textAlign:'right',paddingVertical:4},
+  settingsAction:{minHeight:57,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1,borderBottomColor:C.line},
+  settingsActionText:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'600',color:C.text,flex:1},
+  walletActivityWindow:{minHeight:100,justifyContent:'center'},
+  emptyActivity:{minHeight:72,alignItems:'center',justifyContent:'center'},
+  todayRestNotice:{...base.todayRestNotice,borderWidth:1,borderColor:C.text,marginBottom:0},
+  exemptionNoticeGroup:{position:'relative',zIndex:10,marginBottom:17},
+  exemptionInfo:{width:22,height:22,borderRadius:11,borderWidth:1.25,borderColor:C.text,alignItems:'center',justifyContent:'center',marginLeft:2},
+  exemptionPopover:{position:'absolute',top:'100%',left:0,right:0,marginTop:10,zIndex:11,backgroundColor:'#F8FBFF',borderWidth:1,borderColor:C.text,borderRadius:14,padding:15},
+  exemptionPointer:{position:'absolute',top:-7,right:22,width:13,height:13,backgroundColor:'#F8FBFF',borderTopWidth:1,borderLeftWidth:1,borderColor:C.text,transform:[{rotate:'45deg'}]},
+  exemptionPopoverText:{includeFontPadding:false,textAlignVertical:'center',fontSize:13,lineHeight:19,color:C.text,textAlign:'center'},
+  todayWeek:{...base.todayWeek,backgroundColor:C.raised,borderWidth:1,borderColor:C.text,borderRadius:14,paddingHorizontal:10,paddingTop:14,paddingBottom:10},
+  todayWeekItem:{...base.todayWeekItem,flex:1},
+  todayMarker:{includeFontPadding:false,textAlignVertical:'center',height:12,fontSize:9,fontWeight:'800',letterSpacing:.5,color:C.text},
+  secondary:{backgroundColor:C.raised,borderWidth:1,borderColor:C.line},
+  samplePost:{height:240,backgroundColor:C.raised,alignItems:'center',justifyContent:'center'},
+  modal:{padding:25,borderRadius:22,borderWidth:1,borderColor:C.line,backgroundColor:C.card},
+  input:{backgroundColor:C.card,borderWidth:1,borderColor:C.line,borderRadius:10,padding:14,color:C.text,includeFontPadding:false,textAlignVertical:'center',fontSize:15,minHeight:50},
+  photoPlaceholder:{height:220,borderRadius:14,borderWidth:1,borderStyle:'dashed',borderColor:C.line,alignItems:'center',justifyContent:'center',marginBottom:18,backgroundColor:C.raised},
+  noticeInline:{includeFontPadding:false,textAlignVertical:'center',fontSize:12,lineHeight:19,color:C.gold,padding:12,borderRadius:9,backgroundColor:C.raised},
+  toast:{position:'absolute',zIndex:100,elevation:100,borderWidth:1,borderColor:C.line,backgroundColor:C.card,borderRadius:13,padding:16,flexDirection:'row',alignItems:'center',gap:12,maxWidth:700,alignSelf:'center'},
+  modalToast:{position:'absolute',zIndex:100,elevation:100,bottom:10,left:20,right:20,backgroundColor:C.card,padding:14,borderRadius:12,borderWidth:1,borderColor:C.line},
+}); }

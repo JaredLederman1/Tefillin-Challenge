@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    * { box-sizing: border-box; }
+    html, body { width: 100%; height: 100%; margin: 0; overflow: hidden; }
+    body {
+      font-family: "Avenir Next", Avenir, Helvetica, Arial, sans-serif;
+      background: radial-gradient(circle at 86% 9%, #5a98ff 0, #2478ff 22%, #083875 51%, #031a3c 100%);
+      color: white;
+    }
+    body::before, body::after {
+      content: ""; position: absolute; border-radius: 50%; border: 1px solid rgba(255,255,255,.12);
+    }
+    body::before { width: 440px; height: 440px; right: -245px; top: 3px; }
+    body::after { width: 310px; height: 310px; left: -205px; top: 185px; }
+    .slide { position: relative; width: 100%; height: 100%; padding: 50px 24px 0; text-align: left; }
+    h1 { position: relative; z-index: 2; margin: 0; width: 390px; font-size: 58px; line-height: .91; letter-spacing: -3.4px; font-weight: 900; text-shadow: 0 5px 24px rgba(0,25,70,.22); }
+    .phone {
+      position: absolute; z-index: 1; top: 230px; left: 33px; width: 382px; height: 824px;
+      overflow: hidden; border: 7px solid #061a39; border-radius: 46px 46px 0 0;
+      background: #ddecff url('today-notch-background.png') center top / 100% auto no-repeat; box-shadow: 0 30px 75px rgba(0,0,0,.43), 0 0 0 1px rgba(255,255,255,.33);
+      transform: rotate(1.8deg);
+    }
+    .phone::before {
+      content: ""; position: absolute; z-index: 3; top: 10px; left: 50%; width: 92px; height: 25px;
+      transform: translateX(-50%); border-radius: 16px; background: #061a39;
+    }
+    .phone img { display: block; width: 100%; height: auto; margin-top: 39px; }
+    .slide.community { background: radial-gradient(circle at 82% 9%, #55c8ff 0, #2478ff 27%, transparent 58%); }
+    .slide.community .phone { left: 15px; transform: rotate(-1.7deg); background-image: url('community-notch-background.png'); }
+    .slide.charity { background: radial-gradient(circle at 82% 8%, #ffd788 0, #2478ff 29%, transparent 58%); }
+    .slide.charity .phone { left: 36px; transform: rotate(2.2deg); background: #343b43; }
+    @media (min-width: 1000px) {
+      html, body { width: 1290px; height: 2796px; }
+      body { background: #031a3c; }
+      body::before { width: 1320px; height: 1320px; right: -735px; top: 9px; }
+      body::after { width: 930px; height: 930px; left: -615px; top: 555px; }
+      .slide {
+        width: 1290px; height: 2796px; padding: 150px 72px 0; overflow: hidden;
+        background: radial-gradient(circle at 86% 9%, #5a98ff 0, #2478ff 22%, #083875 51%, #031a3c 100%);
+      }
+      h1 { width: 1170px; font-size: 174px; letter-spacing: -10.2px; text-shadow: 0 15px 72px rgba(0,25,70,.22); }
+      .phone {
+        top: 690px; left: 99px; width: 1146px; height: 2472px;
+        border-width: 21px; border-radius: 138px 138px 0 0;
+        box-shadow: 0 90px 225px rgba(0,0,0,.43), 0 0 0 3px rgba(255,255,255,.33);
+      }
+      .phone::before { top: 30px; width: 276px; height: 75px; border-radius: 48px; }
+      .phone img { margin-top: 117px; }
+      .slide.community { background: radial-gradient(circle at 82% 9%, #55c8ff 0, #2478ff 27%, #083875 58%, #031a3c 100%); }
+      .slide.community .phone { left: 45px; }
+      .slide.charity { background: radial-gradient(circle at 82% 8%, #ffd788 0, #2478ff 29%, #083875 58%, #031a3c 100%); }
+      .slide.charity .phone { left: 108px; }
+    }
+  </style>
+</head>
+<body>
+  <main id="slide" class="slide">
+    <h1 id="headline"></h1>
+    <div class="phone"><img id="screen" alt="Ratzon app screen" /></div>
+  </main>
+  <script>
+    const slides = {
+      1: { headline: 'Build a daily practice.', image: 'today-raw.png', className: 'daily' },
+      2: { headline: 'Find strength in community.', image: 'community-ai-raw.png', className: 'community' },
+      3: { headline: 'Earn money for charity.', image: 'charity-wallet-raw.png', className: 'charity' }
+    };
+    const selected = slides[new URLSearchParams(location.search).get('slide')] || slides[1];
+    document.getElementById('headline').textContent = selected.headline;
+    document.getElementById('screen').src = selected.image;
+    document.getElementById('slide').classList.add(selected.className);
+  </script>
+</body>
+</html>

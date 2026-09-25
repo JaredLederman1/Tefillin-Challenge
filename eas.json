@@ -4,5 +4,10 @@
     "development": { "developmentClient": true, "distribution": "internal" },
     "preview": { "distribution": "internal", "android": { "buildType": "apk" } },
     "production": { "autoIncrement": true }
+  },
+  "submit": {
+    "production": {
+      "ios": { "ascAppId": "6812479409" }
+    }
   }
 }

@@ -10,14 +10,14 @@ test('no finishers rolls the pool forward; all finishers receive no bonus', () =
   assert.equal(allocatePool([{id:'a',cents:500,completed:true}]).rewards[0].rewardCents, 0);
 });
 test('contribution precision and minimum are enforced', () => {
-  assert.equal(parseContribution('18.25'),1825);
-  for (const value of ['4.99','NaN','-5','18.123','1e3','']) assert.throws(() => parseContribution(value));
+  assert.equal(parseContribution('1.80'),180);assert.equal(parseContribution('18'),1800);
+  for (const value of ['1','1.79','18.01','NaN','-5','18.123','1e3','']) assert.throws(() => parseContribution(value));
 });
 test('calendar excludes Saturday and handles leap years', () => {
   assert.equal(isShabbat('2026-09-12'), true);
   assert.equal(monthDays('2028-02-01').length,29);
-  assert.equal(streak(['2026-09-10','2026-09-11','2026-09-13'],'2026-09-13'),3);
-  assert.equal(streak(['2026-09-11'],'2026-09-14'),0);
+  assert.equal(streak(['2026-09-10','2026-09-11','2026-09-13'],'2026-09-13'),2);
+  assert.equal(streak(['2026-09-11'],'2026-09-14'),1);
 });
 test('local date respects timezone around midnight', () => {
   assert.equal(dateKey(new Date('2026-09-12T02:00:00Z'),'America/New_York'),'2026-09-11');

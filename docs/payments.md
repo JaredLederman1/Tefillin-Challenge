@@ -29,7 +29,7 @@ The owner reported Stripe's approval of this business model by phone on Septembe
 
 ## Operational requirements
 
-Photo review currently requires an administrator to set `checkins.review_status`; no automatic authenticity review or admin review UI is implemented. The schedule records a blocker if a month has pending photos. A month with no finishers stays unsettled pending a rollover/refund decision. Holiday exemptions beyond Saturday are not yet implemented.
+Photo review currently requires an administrator to set `checkins.review_status`; no automatic authenticity review or admin review UI is implemented. The schedule records a blocker if a month has pending photos. A month with no finishers stays unsettled pending a rollover/refund decision. Shabbat and major Yom Tov dates (Diaspora calendar, 2020–2040) are exempt in check-ins and settlement. Chol Hamoed is also exempt from streak and settlement requirements. Weekday check-ins remain optional; Shabbat and Yom Tov posting stays blocked. Exempt days neither add to nor break streaks. Extend the generated calendar before 2041.
 
 Administrators must resolve late payments, refunds, disputes, reversed or ambiguous transfers, and separately invoiced fees. Reservation failures intentionally keep money reserved until Stripe's outcome is reconciled; never release a reservation just because a network call timed out. Change subscription amounts by canceling the existing membership and waiting for its end; immediate mid-cycle changes are not supported.
 
@@ -63,4 +63,17 @@ The giving balance contains settled returned contributions plus earnings, after 
 
 ## Live configuration — September 13, 2026
 
-Friends of the IDF is enabled as the first live donation cause, with no expiration month. Live webhook `we_1UFCw2Cd2omq8A93gSLZ9giu` is active at the Supabase endpoint. Its signing secret is stored only in Supabase as `STRIPE_LIVE_WEBHOOK_SECRET`. The dashboard offered API version `2026-08-26.dahlia`; the handler retrieves payment and subscription objects using its own pinned API version. Selected events are invoice.payment_succeeded, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted, charge.refunded, charge.dispute.created, and charge.dispute.closed. No transfer events are needed for the retired payout flow. An unsigned request returned HTTP 400 Invalid signature. This verifies endpoint reachability and signature enforcement, not successful live payment delivery.
+United Hatzalah is enabled as the first live donation cause, with no expiration month. Live webhook `we_1UFCw2Cd2omq8A93gSLZ9giu` is active at the Supabase endpoint. Its signing secret is stored only in Supabase as `STRIPE_LIVE_WEBHOOK_SECRET`. The dashboard offered API version `2026-08-26.dahlia`; the handler retrieves payment and subscription objects using its own pinned API version. Selected events are invoice.payment_succeeded, customer.subscription.created, customer.subscription.updated, customer.subscription.deleted, charge.refunded, charge.dispute.created, and charge.dispute.closed. No transfer events are needed for the retired payout flow. An unsigned request returned HTTP 400 Invalid signature. This verifies endpoint reachability and signature enforcement, not successful live payment delivery.
+
+## Apple Pay configuration
+
+Registered merchant ID supplied by the owner: `merchant.com.jaredlederman.ratzon`.
+The Expo Stripe plugin and native Stripe initialization use the same ID from app.json. PaymentSheet enables Apple Pay for the US merchant alongside card entry.
+
+Certificate setup (completed in the live account, verified September 13, 2026): open [Stripe iOS Certificate Settings](https://dashboard.stripe.com/settings/ios_certificates), add an application, and download Stripe's CSR. In Apple Developer, select this Merchant ID and create an **Apple Pay Payment Processing Certificate** using that CSR. Download the certificate and finish uploading it in Stripe. Do not use a locally generated CSR.
+
+After certificate setup, rebuild and install the iOS development app so it includes the Apple Pay entitlement. Reloading Metro cannot add native entitlements. Apple Pay availability and payment completion still require testing on a supported device; no real charge has been performed for this configuration change.
+
+Reference: [Stripe React Native Apple Pay setup](https://docs.stripe.com/apple-pay?platform=react-native).
+
+Verified in the Ratzon live Stripe dashboard: merchant.com.jaredlederman.ratzon is listed under iOS certificates, created September 13, 2026 and expiring October 12, 2028. An updated signed iOS build and device verification remain outstanding.

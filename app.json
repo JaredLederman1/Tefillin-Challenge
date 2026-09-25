@@ -7,14 +7,14 @@
       "levav",
       "tefillinchallenge"
     ],
-    "version": "1.0.0",
+    "version": "1.0.1",
     "orientation": "portrait",
     "userInterfaceStyle": "dark",
     "icon": "./assets/icon.png",
     "splash": {
       "image": "./assets/splash-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#000000"
+      "backgroundColor": "#EDF4FF"
     },
     "ios": {
       "supportsTablet": false,
@@ -28,7 +28,8 @@
       "package": "com.jaredlederman.tefillinchallenge",
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#000000"
+        "backgroundColor": "#EDF4FF",
+        "monochromeImage": "./assets/android-icon-monochrome.png"
       }
     },
     "web": {
@@ -40,7 +41,7 @@
       [
         "expo-image-picker",
         {
-          "photosPermission": "Choose your daily tefillin photo to share with the community.",
+          "photosPermission": false,
           "cameraPermission": "Take your daily tefillin photo.",
           "microphonePermission": false
         }
@@ -49,9 +50,11 @@
       [
         "@stripe/stripe-react-native",
         {
-          "enableGooglePay": false
+          "enableGooglePay": false,
+          "merchantIdentifier": "merchant.com.jaredlederman.ratzon"
         }
-      ]
+      ],
+      "expo-secure-store"
     ],
     "extra": {
       "eas": {
