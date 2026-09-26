@@ -47,13 +47,7 @@
         }
       ],
       "expo-apple-authentication",
-      [
-        "@stripe/stripe-react-native",
-        {
-          "enableGooglePay": false,
-          "merchantIdentifier": "merchant.com.jaredlederman.ratzon"
-        }
-      ],
+      "expo-iap",
       "expo-secure-store"
     ],
     "extra": {
