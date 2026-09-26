@@ -1,4 +1,5 @@
 import {db,reply,cors,stripe,member,checked,syncSubscription} from '../_shared/billing.ts';
+import {verifyApplePurchase} from '../_shared/apple.ts';
 
 // Webhooks remain the primary path, but this closes the gap when a device has
 // confirmed Apple Pay and Stripe has not yet delivered its invoice event.
@@ -28,6 +29,15 @@ Deno.serve(async req=>{
  try {
   const user=await member(req);const body=await req.json();const mode=body.livemode===true;
   if(body.action==='withdraw'||body.action==='onboard') return reply({error:'Payouts have been retired. Use donations instead.'},410);
+  if(body.action==='apple-purchase') {
+   const transaction=await verifyApplePurchase(body,user.id);
+   const membership=checked(await db().rpc('reserve_membership',{member:user.id,mode:true,cents:180,covers_fee:false}));
+   if(membership.subscription_id&&membership.subscription_id!==transaction.originalTransactionId) return reply({error:'Another App Store subscription is already active.'},409);
+   checked(await db().from('billing_memberships').update({subscription_id:transaction.originalTransactionId,status:'active',cancel_at_period_end:false}).eq('id',membership.id).eq('livemode',true));
+   const paidAt=new Date(transaction.purchaseDate).toISOString();
+   checked(await db().rpc('record_paid_invoice',{event_id:`apple:${transaction.transactionId}`,mode:true,membership:membership.id,invoice_id:`apple:${transaction.transactionId}`,intent_id:`apple:${transaction.transactionId}`,charge:`apple:${transaction.transactionId}`,gross:180,fee:0,paid:paidAt,available:paidAt,issued:paidAt}));
+   return reply({verified:true,transactionId:transaction.transactionId,environment:transaction.environment});
+  }
   if(body.action==='donate') {
    const uuid=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
    if(!uuid.test(body.requestId||'')||!uuid.test(body.causeId||'')||!Number.isSafeInteger(body.amountCents)||body.amountCents<=0) return reply({error:'Invalid donation request'},400);

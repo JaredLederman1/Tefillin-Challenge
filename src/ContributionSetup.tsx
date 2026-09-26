@@ -9,7 +9,7 @@ import {isUserCancelledError} from 'expo-iap';
 
 export const MONTHLY_CONTRIBUTION_PRODUCT_ID='com.jaredlederman.tefillinchallenge.monthly-contribution';
 
-export function ContributionSetup({onPurchase,onRefresh,onSkip,onBack}:{onPurchase:(purchase:Purchase)=>Promise<void>;onRefresh:()=>Promise<void>;onSkip?:()=>void;onBack:()=>void}) {
+export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,onBack}:{appAccountToken:string;onPurchase:(purchase:Purchase)=>Promise<void>;onRefresh:()=>Promise<void>;onSkip?:()=>void;onBack:()=>void}) {
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const purchaseHandler=useRef(onPurchase);purchaseHandler.current=onPurchase;
  const refresh=useRef(onRefresh);refresh.current=onRefresh;
@@ -20,7 +20,7 @@ export function ContributionSetup({onPurchase,onRefresh,onSkip,onBack}:{onPurcha
  });
  useEffect(()=>{if(Platform.OS!=='ios'){setError('Monthly contributions are available through the iPhone app.');return;}if(connected)void fetchProducts({skus:[MONTHLY_CONTRIBUTION_PRODUCT_ID],type:'subs'}).catch(e=>setError(e.message||'Could not load the App Store purchase.'));},[connected,fetchProducts]);
  useEffect(()=>{setReady(subscriptions.some(product=>product.id===MONTHLY_CONTRIBUTION_PRODUCT_ID));},[subscriptions]);
- async function pay(){if(busy)return;setBusy(true);setError('');try{await requestPurchase({request:{apple:{sku:MONTHLY_CONTRIBUTION_PRODUCT_ID}},type:'subs'});}catch(e:any){setBusy(false);setError(e.message||'Could not open the App Store purchase.');}}
+ async function pay(){if(busy)return;setBusy(true);setError('');try{await requestPurchase({request:{apple:{sku:MONTHLY_CONTRIBUTION_PRODUCT_ID,appAccountToken}},type:'subs'});}catch(e:any){setBusy(false);setError(e.message||'Could not open the App Store purchase.');}}
  return <SafeAreaView style={s.screen}><StatusBar style="dark"/><LinearGradient colors={['#F8FBFF','#E8F1FF','#D7E7FF']} style={StyleSheet.absoluteFill}/><View style={s.body}>
   <Pressable accessibilityRole="button" accessibilityLabel="Back to onboarding" disabled={busy} onPress={onBack} style={s.back}><Ionicons name="chevron-back" size={27} color="#062B60"/></Pressable>
   <Text accessibilityRole="header" style={s.title}>Monthly Contribution</Text>
