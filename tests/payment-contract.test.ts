@@ -12,9 +12,9 @@ test('iOS contribution uses StoreKit and has no Stripe checkout path',()=>{
  assert.match(paymentClient,/billingAction\('apple-purchase'/);
  assert.match(paymentClient,/signedTransactionInfo/);
  assert.match(purchaseScreen,/useIAP/);
- assert.match(purchaseScreen,/com\.jaredlederman\.tefillinchallenge\.monthly-contribution/);
+ assert.match(purchaseScreen,/com\.jaredlederman\.tefillinchallenge\.monthly_contribution/);
  assert.match(purchaseScreen,/appAccountToken/);
- assert.match(purchaseScreen,/\$2\.19\/month through the App Store/);
+ assert.match(purchaseScreen,/\$2\.29\/month through the App Store/);
  assert.match(billing,/body\.action==='apple-purchase'/);
  assert.match(appleVerifier,/api\.storekit\.itunes\.apple\.com/);
  assert.match(appleVerifier,/transaction\.appAccountToken!==expectedAccountToken/);

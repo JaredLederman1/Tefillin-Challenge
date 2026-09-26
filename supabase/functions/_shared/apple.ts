@@ -1,6 +1,6 @@
 const text = new TextEncoder();
 
-export const APPLE_MONTHLY_PRODUCT_ID = 'com.jaredlederman.tefillinchallenge.monthly-contribution';
+export const APPLE_MONTHLY_PRODUCT_ID = 'com.jaredlederman.tefillinchallenge.monthly_contribution';
 export const APPLE_BUNDLE_ID = 'com.jaredlederman.tefillinchallenge';
 
 type AppleTransaction = {
@@ -54,18 +54,30 @@ async function fetchTransaction(transactionId:string,environment:'Sandbox'|'Prod
   return decodePayload<AppleTransaction>(body.signedTransactionInfo);
 }
 
+/**
+ * Look up a transaction from Apple's authenticated Server API. Notifications
+ * are deliberately reconciled through this API instead of trusting their
+ * decoded JWS payload alone.
+ */
+export async function getAppleTransaction(transactionId:string, environment?:string|null) {
+  if(!/^\d+$/.test(transactionId)) throw new Error('Invalid App Store transaction identifier.');
+  const requested=environment==='Production'?'Production':'Sandbox';
+  let transaction:AppleTransaction;
+  try { transaction=await fetchTransaction(transactionId,requested); }
+  catch(error) {
+    if(requested==='Production') transaction=await fetchTransaction(transactionId,'Sandbox');
+    else throw error;
+  }
+  if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.bundleId!==APPLE_BUNDLE_ID) throw new Error('Unexpected App Store transaction.');
+  return transaction;
+}
+
 /** Verify the transaction with Apple before any entitlement or wallet credit is created. */
 export async function verifyApplePurchase(input:{transactionId:string;originalTransactionId:string;productId:string;environment?:string|null;appAccountToken:string},expectedAccountToken:string) {
   if(input.productId!==APPLE_MONTHLY_PRODUCT_ID) throw new Error('Unexpected App Store product.');
   if(!/^\d+$/.test(input.transactionId)||!/^\d+$/.test(input.originalTransactionId)) throw new Error('Invalid App Store transaction identifier.');
-  const requested=input.environment==='Production'?'Production':'Sandbox';
-  let transaction:AppleTransaction;
-  try { transaction=await fetchTransaction(input.transactionId,requested); }
-  catch(error) {
-    if(requested==='Production') transaction=await fetchTransaction(input.transactionId,'Sandbox');
-    else throw error;
-  }
-  if(transaction.transactionId!==input.transactionId||transaction.originalTransactionId!==input.originalTransactionId||transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.bundleId!==APPLE_BUNDLE_ID||transaction.appAccountToken!==expectedAccountToken||transaction.revocationDate) throw new Error('App Store transaction validation failed.');
+  const transaction=await getAppleTransaction(input.transactionId,input.environment);
+  if(transaction.transactionId!==input.transactionId||transaction.originalTransactionId!==input.originalTransactionId||transaction.appAccountToken!==expectedAccountToken||transaction.revocationDate) throw new Error('App Store transaction validation failed.');
   if(transaction.type!=='Auto-Renewable Subscription') throw new Error('This App Store product is not a subscription.');
   if(transaction.expiresDate&&transaction.expiresDate<Date.now()) throw new Error('This subscription is no longer active.');
   return transaction;

@@ -7,7 +7,7 @@ import Ionicons from '@expo/vector-icons/Ionicons';
 import {useIAP,type Purchase} from 'expo-iap';
 import {isUserCancelledError} from 'expo-iap';
 
-export const MONTHLY_CONTRIBUTION_PRODUCT_ID='com.jaredlederman.tefillinchallenge.monthly-contribution';
+export const MONTHLY_CONTRIBUTION_PRODUCT_ID='com.jaredlederman.tefillinchallenge.monthly_contribution';
 
 export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,onBack}:{appAccountToken:string;onPurchase:(purchase:Purchase)=>Promise<void>;onRefresh:()=>Promise<void>;onSkip?:()=>void;onBack:()=>void}) {
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[ready,setReady]=useState(false);
@@ -26,7 +26,7 @@ export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,o
   <Text accessibilityRole="header" style={s.title}>Monthly Contribution</Text>
   <Text style={s.amount}>$1.80</Text>
   <Text style={s.text}>Your contribution enters the challenge every month. When you wrap tefillin on every required day, you earn a share of the challenge pool. Your available earnings are then donated to the charity you choose. Cancel anytime in your Apple subscriptions.</Text>
-  <Text style={s.purchaseNote}>$2.19/month through the App Store, including payment and technology costs. Renews monthly until canceled.</Text>
+  <Text style={s.purchaseNote}>$2.29/month through the App Store, including payment and technology costs. Renews monthly until canceled.</Text>
   <Pressable accessibilityRole="button" accessibilityLabel="Continue to App Store payment" style={[s.button,{opacity:busy||!ready?0.5:1}]} disabled={busy||!ready} onPress={pay}><Text style={s.buttonText}>{busy?'Confirming purchase…':'Continue to Payment'}</Text></Pressable>
   {!ready&&!error&&<Text style={s.status}>Loading App Store purchase…</Text>}
   {!!onSkip&&<Pressable accessibilityRole="button" accessibilityLabel="Skip monthly contribution for testing" disabled={busy} onPress={onSkip} style={s.skip}><Text style={s.skipText}>Skip for now</Text></Pressable>}

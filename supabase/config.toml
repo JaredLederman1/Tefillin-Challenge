@@ -10,6 +10,11 @@ verify_jwt = false
 [functions.ratzon-webhook]
 verify_jwt = false
 
+[functions.apple-notifications]
+# Apple cannot send a Supabase JWT. The handler validates each transaction
+# against Apple's authenticated App Store Server API before changing records.
+verify_jwt = false
+
 [functions.dev-delete-account]
 # Temporary testing tool; the handler authenticates the caller and deletes only that user.
 verify_jwt = false
