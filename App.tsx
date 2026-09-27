@@ -730,7 +730,7 @@ function AppContent() {
       <LinearGradient pointerEvents="none" colors={['#F8FBFF','#E8F1FF','#D7E7FF']} style={StyleSheet.absoluteFill}/>
       <View pointerEvents="none" style={[s.coverCenter,{top:'50%',transform:[{translateY:-(Math.min(width - 64,384)*.27*992/795)/2-16}]}]}><WelcomeBrand width={Math.min(width - 64, 384)} onAnimationComplete={()=>setHomeSloganVisible(true)}/><Animated.Text style={{opacity:homeSloganOpacity,marginTop:24,textAlign:'center',color:'#062B60',includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'500',letterSpacing:.4}}>Live With Intention</Animated.Text></View>
       <Animated.View style={{gap:0,width:'100%',maxWidth:384,alignSelf:'center',opacity:homeActionsOpacity}}>
-        <Pressable accessibilityRole="button" accessibilityLabel="Get Started" onPress={()=>openAuth(true)} style={({pressed})=>[s.getStarted,{opacity:pressed?.8:1}]}><Text style={s.getStartedText}>Get Started</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel="Get Started" disabled={busy} onPress={()=>{setSignup(true);setNotice('');void signInWithApple();}} style={({pressed})=>[s.getStarted,{opacity:busy?.45:pressed?.8:1}]}><Text style={s.getStartedText}>Get Started</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Already have an account? Log In" onPress={()=>openAuth(false)} style={{alignItems:'center',justifyContent:'center',minHeight:44}}><Text style={{color:'#16365F',includeFontPadding:false,textAlignVertical:'center',fontSize:11}}>Already have an account? <Text style={{fontWeight:'600',textDecorationLine:'underline'}}>Log In</Text></Text></Pressable>
       </Animated.View>
     </SafeAreaView> : <>

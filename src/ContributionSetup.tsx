@@ -6,6 +6,7 @@ import {StatusBar} from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {useIAP,type Purchase} from 'expo-iap';
 import {isUserCancelledError} from 'expo-iap';
+import {confirmPurchaseSteps,withPurchaseTimeout} from './purchase-confirmation';
 
 export const MONTHLY_CONTRIBUTION_PRODUCT_ID='com.jaredlederman.tefillinchallenge.monthly_contribution';
 
@@ -13,21 +14,35 @@ export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,o
  const [busy,setBusy]=useState(false),[error,setError]=useState(''),[ready,setReady]=useState(false);
  const purchaseHandler=useRef(onPurchase);purchaseHandler.current=onPurchase;
  const refresh=useRef(onRefresh);refresh.current=onRefresh;
+ const processing=useRef(false),attempted=useRef(new Set<string>()),pendingPurchase=useRef<Purchase|null>(null);
+ const mounted=useRef(true);
+ useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
+ async function confirm(purchase:Purchase,retry=false){
+  if(purchase.productId!==MONTHLY_CONTRIBUTION_PRODUCT_ID||processing.current)return;
+  const id=purchase.transactionId||purchase.id;
+  if(!retry&&pendingPurchase.current)return;
+  if(!retry&&attempted.current.has(id))return;
+  attempted.current.add(id);processing.current=true;pendingPurchase.current=purchase;setBusy(true);setError('');
+  try{await confirmPurchaseSteps(()=>purchaseHandler.current(purchase),()=>finishTransaction({purchase,isConsumable:false}),()=>refresh.current());pendingPurchase.current=null;}
+  catch(e:any){if(mounted.current)setError(e.message||'We could not confirm this App Store purchase.');}
+  finally{processing.current=false;if(mounted.current)setBusy(false);}
+ }
  const {connected,subscriptions,fetchProducts,requestPurchase,finishTransaction}=useIAP({
-  onPurchaseSuccess:(purchase)=>{void (async()=>{setBusy(true);setError('');try{await purchaseHandler.current(purchase);await finishTransaction({purchase,isConsumable:false});await refresh.current();}catch(e:any){setError(e.message||'We could not confirm this App Store purchase.');}finally{setBusy(false);}})();},
-  onPurchaseError:(purchaseError)=>{setBusy(false);if(!isUserCancelledError(purchaseError))setError(purchaseError.message||'The App Store purchase could not be completed.');},
-  onError:(storeError)=>setError(storeError.message||'The App Store is unavailable right now.')
+  onPurchaseSuccess:(purchase)=>{void confirm(purchase);},
+  onPurchaseError:(purchaseError)=>{if(processing.current)return;setBusy(false);if(!isUserCancelledError(purchaseError))setError(purchaseError.message||'The App Store purchase could not be completed.');},
+  onError:(storeError)=>{if(!processing.current)setBusy(false);setError(storeError.message||'The App Store is unavailable right now.');}
  });
  useEffect(()=>{if(Platform.OS!=='ios'){setError('Monthly contributions are available through the iPhone app.');return;}if(connected)void fetchProducts({skus:[MONTHLY_CONTRIBUTION_PRODUCT_ID],type:'subs'}).catch(e=>setError(e.message||'Could not load the App Store purchase.'));},[connected,fetchProducts]);
  useEffect(()=>{setReady(subscriptions.some(product=>product.id===MONTHLY_CONTRIBUTION_PRODUCT_ID));},[subscriptions]);
- async function pay(){if(busy)return;setBusy(true);setError('');try{await requestPurchase({request:{apple:{sku:MONTHLY_CONTRIBUTION_PRODUCT_ID,appAccountToken}},type:'subs'});}catch(e:any){setBusy(false);setError(e.message||'Could not open the App Store purchase.');}}
+ useEffect(()=>{if(!busy)return;const timer=setTimeout(()=>{if(!processing.current&&mounted.current){setBusy(false);setError('The App Store did not finish responding. Please try again.');}},90000);return()=>clearTimeout(timer);},[busy]);
+ async function pay(){if(busy)return;if(pendingPurchase.current){await confirm(pendingPurchase.current,true);return;}setBusy(true);setError('');try{await withPurchaseTimeout(requestPurchase({request:{apple:{sku:MONTHLY_CONTRIBUTION_PRODUCT_ID,appAccountToken}},type:'subs'}),'The App Store did not finish responding. Please try again.',90000);}catch(e:any){if(!processing.current){setBusy(false);if(!isUserCancelledError(e))setError(e.message||'Could not open the App Store purchase.');}}}
  return <SafeAreaView style={s.screen}><StatusBar style="dark"/><LinearGradient colors={['#F8FBFF','#E8F1FF','#D7E7FF']} style={StyleSheet.absoluteFill}/><View style={s.body}>
   <Pressable accessibilityRole="button" accessibilityLabel="Back to onboarding" disabled={busy} onPress={onBack} style={s.back}><Ionicons name="chevron-back" size={27} color="#062B60"/></Pressable>
   <Text accessibilityRole="header" style={s.title}>Monthly Contribution</Text>
   <Text style={s.amount}>$1.80</Text>
   <Text style={s.text}>Your contribution enters the challenge every month. When you wrap tefillin on every required day, you earn a share of the challenge pool. Your available earnings are then donated to the charity you choose. Cancel anytime in your Apple subscriptions.</Text>
   <Text style={s.purchaseNote}>$2.29/month through the App Store, including payment and technology costs. Renews monthly until canceled.</Text>
-  <Pressable accessibilityRole="button" accessibilityLabel="Continue to App Store payment" style={[s.button,{opacity:busy||!ready?0.5:1}]} disabled={busy||!ready} onPress={pay}><Text style={s.buttonText}>{busy?'Confirming purchase…':'Continue to Payment'}</Text></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel={pendingPurchase.current?'Retry purchase confirmation':'Continue to App Store payment'} style={[s.button,{opacity:busy||(!ready&&!pendingPurchase.current)?0.5:1}]} disabled={busy||(!ready&&!pendingPurchase.current)} onPress={pay}><Text style={s.buttonText}>{busy?'Confirming purchase…':pendingPurchase.current?'Retry confirmation':'Continue to Payment'}</Text></Pressable>
   {!ready&&!error&&<Text style={s.status}>Loading App Store purchase…</Text>}
   {!!onSkip&&<Pressable accessibilityRole="button" accessibilityLabel="Skip monthly contribution for testing" disabled={busy} onPress={onSkip} style={s.skip}><Text style={s.skipText}>Skip for now</Text></Pressable>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
