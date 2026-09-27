@@ -25,7 +25,8 @@ test('Apple verifier sends required bundle claim and validates purchase ownershi
   const js=ts.transpile(source,{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
   const {verifyApplePurchase}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
   assert.equal((await verifyApplePurchase(transaction,'member-1')).transactionId,transaction.transactionId);
-  await assert.rejects(()=>verifyApplePurchase(transaction,'wrong-member'),/validation failed/);
+  assert.equal((await verifyApplePurchase(transaction,'MEMBER-1')).transactionId,transaction.transactionId);
+  await assert.rejects(()=>verifyApplePurchase(transaction,'wrong-member'),/linked to a different Ratzon account/);
   Object.assign(transaction,{revocationDate:Date.now()});
   await assert.rejects(()=>verifyApplePurchase(transaction,'member-1'),/validation failed/);
   assert.ok(calls.every(url=>url.includes('storekit-sandbox')));

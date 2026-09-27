@@ -92,7 +92,8 @@ export async function verifyApplePurchase(input:{transactionId:string;originalTr
   if(input.productId!==APPLE_MONTHLY_PRODUCT_ID) throw new Error('Unexpected App Store product.');
   if(!/^\d+$/.test(input.transactionId)||!/^\d+$/.test(input.originalTransactionId)) throw new Error('Invalid App Store transaction identifier.');
   const transaction=await getAppleTransaction(input.transactionId,input.environment);
-  if(transaction.transactionId!==input.transactionId||transaction.originalTransactionId!==input.originalTransactionId||transaction.appAccountToken!==expectedAccountToken||transaction.revocationDate) throw new Error('App Store transaction validation failed.');
+  if(transaction.transactionId!==input.transactionId||transaction.originalTransactionId!==input.originalTransactionId||transaction.revocationDate) throw new Error('App Store transaction validation failed.');
+  if(transaction.appAccountToken?.toLowerCase()!==expectedAccountToken.toLowerCase()) throw new Error('This Apple subscription is linked to a different Ratzon account. Sign in to the original account or contact support if it was deleted.');
   if(transaction.type!=='Auto-Renewable Subscription') throw new Error('This App Store product is not a subscription.');
   if(transaction.expiresDate&&transaction.expiresDate<Date.now()) throw new Error('This subscription is no longer active.');
   return transaction;

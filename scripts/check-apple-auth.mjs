@@ -1,6 +1,7 @@
 // Read-only authentication probe. Prints statuses only, never keys or JWTs.
 import fs from 'node:fs';
 import ts from 'typescript';
+import {execFileSync} from 'node:child_process';
 const keyPath=process.argv[2];
 if(!keyPath) throw new Error('Pass the path to the existing Apple .p8 key.');
 const env={APPLE_IAP_ISSUER_ID:'f36669c4-e669-4907-bb3f-07d2a14c93d4',APPLE_IAP_KEY_ID:'D34SSFXV73',APPLE_IAP_PRIVATE_KEY_BASE64:fs.readFileSync(keyPath).toString('base64')};
@@ -35,6 +36,14 @@ if(response.ok){
  if(hint){
   const transaction=await getAppleTransaction(hint.transactionId,'Sandbox');
   console.log(JSON.stringify({check:'actual sandbox transaction lookup',verified:true,environment:transaction.environment,hasAccountToken:!!transaction.appAccountToken,expired:transaction.expiresDate<Date.now()}));
+  console.log(JSON.stringify({check:'transaction metadata',renewal:transaction.transactionId!==transaction.originalTransactionId,uppercaseAccountToken:transaction.appAccountToken!==transaction.appAccountToken?.toLowerCase()}));
+  if(process.argv.includes('--account-check')){
+   if(!/^[0-9a-f-]{36}$/i.test(transaction.appAccountToken||''))throw new Error('Cannot check a missing or invalid account token.');
+   const sql=`select exists(select 1 from auth.users where id='${transaction.appAccountToken}'::uuid) as purchase_account_exists, coalesce((select id='${transaction.appAccountToken}'::uuid from auth.users where exists(select 1 from auth.identities where user_id=auth.users.id and provider='apple') order by last_sign_in_at desc nulls last limit 1),false) as matches_latest_apple_account;`;
+   console.log(execFileSync('npx',['--yes','supabase','db','query','--linked','--output','json',sql],{encoding:'utf8',timeout:30000}));
+   const auditSql=`select payload->>'action' as action, payload->'traits'->>'provider' as provider, array(select json_object_keys(payload)) as fields, coalesce(payload->>'actor_username'=(select email from auth.users where exists(select 1 from auth.identities where user_id=auth.users.id and provider='apple') order by last_sign_in_at desc nulls last limit 1),false) as matches_latest_apple_email from auth.audit_log_entries where payload->>'actor_id'='${transaction.appAccountToken}' order by created_at desc limit 5;`;
+   console.log(execFileSync('npx',['--yes','supabase','db','query','--linked','--output','json',auditSql],{encoding:'utf8',timeout:30000}));
+  }
   try{
    await verifyApplePurchase(transaction,transaction.appAccountToken);
    console.log(JSON.stringify({check:'actual purchase validation',passed:true}));
