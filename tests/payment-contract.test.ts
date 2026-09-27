@@ -17,6 +17,6 @@ test('iOS contribution uses StoreKit and has no Stripe checkout path',()=>{
  assert.match(purchaseScreen,/\$2\.29\/month through the App Store/);
  assert.match(billing,/body\.action==='apple-purchase'/);
  assert.match(appleVerifier,/api\.storekit\.itunes\.apple\.com/);
- assert.match(appleVerifier,/transaction\.appAccountToken!==expectedAccountToken/);
+ assert.match(appleVerifier,/transaction\.appAccountToken\?\.toLowerCase\(\)!==expectedAccountToken\.toLowerCase\(\)/);
  assert.doesNotMatch(config,/@stripe\/stripe-react-native/);
 });
