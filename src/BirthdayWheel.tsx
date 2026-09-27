@@ -1,6 +1,6 @@
 import React, {memo,useCallback,useEffect,useMemo,useRef} from 'react';
 import {Animated,Platform,View,ScrollView,Pressable,StyleSheet} from 'react-native';
-import {birthdayForInput,clampBirthday,defaultBirthday} from './onboarding-data';
+import {birthdayForInput,clampSignupBirthday,defaultBirthday,minimumSignupBirthday} from './onboarding-data';
 
 const ROW=44;
 const months=['January','February','March','April','May','June','July','August','September','October','November','December'];
@@ -48,13 +48,14 @@ const Wheel=memo(function Wheel({label,items,value,onChange,onMotion,flex=1}:{la
 });
 export function BirthdayWheel({value,onChange,onScrollingChange}:{value:string;onChange:(value:string)=>void;onScrollingChange?:(moving:boolean)=>void}) {
   const today=new Date();
-  const [month,day,year]=(birthdayForInput(value)||defaultBirthday(today)).split('/').map(Number);
+  const [month,day,year]=(birthdayForInput(value)||minimumSignupBirthday(today)).split('/').map(Number);
+  const [maxMonthValue,maxDayValue,maxYearValue]=minimumSignupBirthday(today).split('/').map(Number);
   const latest=useRef({month,day,year,onChange,onScrollingChange});latest.current={month,day,year,onChange,onScrollingChange};
   const activeWheels=useRef(new Set<string>());
   const onMotion=useCallback((label:string,moving:boolean)=>{if(moving)activeWheels.current.add(label);else activeWheels.current.delete(label);latest.current.onScrollingChange?.(activeWheels.current.size>0);},[]);
   const update=useCallback((part:'month'|'day'|'year',number:number)=>{
     const date={...latest.current,[part]:number};
-    const result=clampBirthday(date.year,date.month,date.day);
+    const result=clampSignupBirthday(date.year,date.month,date.day);
     const [m,d,y]=result.split('/').map(Number);
     latest.current={...latest.current,month:m,day:d,year:y};
     latest.current.onChange(result);
@@ -62,12 +63,11 @@ export function BirthdayWheel({value,onChange,onScrollingChange}:{value:string;o
   const changeMonth=useCallback((n:number)=>update('month',n),[update]);
   const changeDay=useCallback((n:number)=>update('day',n),[update]);
   const changeYear=useCallback((n:number)=>update('year',n),[update]);
-  const maxMonth=year===today.getFullYear()?today.getMonth()+1:12;
-  const maxDay=year===today.getFullYear()&&month===maxMonth?today.getDate():new Date(year,month,0).getDate();
+  const maxMonth=year===maxYearValue?maxMonthValue:12;
+  const maxDay=year===maxYearValue&&month===maxMonthValue?maxDayValue:new Date(year,month,0).getDate();
   const monthItems=useMemo(()=>months.slice(0,maxMonth).map((label,i)=>({value:i+1,label})),[maxMonth]);
   const dayItems=useMemo(()=>Array.from({length:maxDay},(_,i)=>({value:i+1,label:String(i+1)})),[maxDay]);
-  const thisYear=today.getFullYear();
-  const yearItems=useMemo(()=>Array.from({length:thisYear-1899},(_,i)=>({value:1900+i,label:String(1900+i)})),[thisYear]);
+  const yearItems=useMemo(()=>Array.from({length:maxYearValue-1899},(_,i)=>({value:1900+i,label:String(1900+i)})),[maxYearValue]);
   return <View style={s.frame}>
     <View pointerEvents="none" style={s.selection}/>
     <Wheel label="Birth month" flex={1.7} items={monthItems} value={month} onChange={changeMonth} onMotion={onMotion}/>

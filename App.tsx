@@ -185,7 +185,6 @@ function AppContent() {
   const [cause, setCause] = useState('');
   const [name, setName] = useState('');
   const [signup, setSignup] = useState(true);
-  const [signupAgeConfirmed,setSignupAgeConfirmed]=useState(false);
   const authMotion = useRef(new Animated.Value(0)).current;
   const [reduceMotion,setReduceMotion] = useState(false);
   const [homeSloganVisible,setHomeSloganVisible] = useState(false);
@@ -233,7 +232,7 @@ function AppContent() {
     } catch(error:any){setNotice(error.message||'Could not delete account.');} finally {setBusy(false);}
   };
   const openAuth = (createAccount: boolean) => {
-    setSignup(createAccount);setSignupAgeConfirmed(false);setNotice('');setSheet('auth');
+    setSignup(createAccount);setNotice('');setSheet('auth');
   };
   const [liked, setLiked] = useState<string[]>([]);
   const [hiddenPostIds,setHiddenPostIds]=useState<string[]>([]);
@@ -491,7 +490,6 @@ function AppContent() {
   }
   async function signInWithApple() {
     if (busy) return;
-    if(signup&&!signupAgeConfirmed){setNotice('Confirm that you are at least 13 years old.');return;}
     if (!appleAvailable) { setNotice('Apple sign-in is available in the iPhone app.'); return; }
     if (!supabase) { setNotice('Account signup is not connected yet.'); return; }
     setBusy(true);
@@ -767,9 +765,8 @@ function AppContent() {
     {sheet==='commit-success'&&committedDonation&&<View accessibilityRole="alert" style={s.commitSuccess}><Animated.View style={[s.commitMark,{opacity:commitmentMotion,transform:[{scale:commitmentMotion.interpolate({inputRange:[0,1],outputRange:[.55,1]})}]}]}><Icon name="heart" size={42} color="#FFFFFF"/></Animated.View><Text style={s.commitAmount}>{money(committedDonation.cents)}</Text><Text style={s.commitCause}>Committed to {committedDonation.causeName}</Text><Text style={s.body}>This amount has left your available balance. Ratzon will record the donation confirmation here.</Text><View style={{width:'100%',marginTop:24}}><Button label="Done" onPress={()=>{setCommittedDonation(null);setSheet(null);}}/></View></View>}
 
     {sheet==='auth'&&<View style={{gap:12}}>
-      {signup&&<Pressable accessibilityRole="checkbox" accessibilityState={{checked:signupAgeConfirmed}} disabled={busy} onPress={()=>setSignupAgeConfirmed(value=>!value)} style={[s.row,{minHeight:44,gap:10}]}><Icon name={signupAgeConfirmed?'checkbox':'square-outline'} color={C.text}/><Text style={[s.body,{flex:1}]}>I confirm that I am at least 13 years old.</Text></Pressable>}
       <View pointerEvents={busy?'none':'auto'} accessibilityState={{busy}} style={{opacity:busy?.5:1}}>
-        <Pressable accessibilityRole="button" accessibilityLabel={signup?'Sign up with Apple':'Sign in with Apple'} disabled={busy||(signup&&!signupAgeConfirmed)} onPress={signInWithApple} style={[s.appleButton,s.authOption,{opacity:busy||(signup&&!signupAgeConfirmed)?0.45:1}]}><Icon name="logo-apple" color={C.text} size={22}/><Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:17,color:C.text,fontWeight:'600'}}>{signup?'Sign up with Apple':'Sign in with Apple'}</Text></Pressable>
+        <Pressable accessibilityRole="button" accessibilityLabel={signup?'Sign up with Apple':'Sign in with Apple'} disabled={busy} onPress={signInWithApple} style={[s.appleButton,s.authOption,{opacity:busy?0.45:1}]}><Icon name="logo-apple" color={C.text} size={22}/><Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:17,color:C.text,fontWeight:'600'}}>{signup?'Sign up with Apple':'Sign in with Apple'}</Text></Pressable>
       </View>
     </View>}
     {sheet==='rules'&&<>{[{body:'Privacy: Ratzon collects the information you provide for your account—name, phone number, school, birthday, tradition, optional community membership, and wrap photos and captions. We use it to operate your account, manage contributions, and provide support. Shared wrap posts appear in the Global feed for signed-in members. If you join a community, its designated admins can view your profile, complete wrap history, captions, and photos, including unshared check-ins, for challenge administration and support.'},{body:'Payments are processed by Apple through the App Store. Ratzon does not receive or store your card number. We retain records required for payment, fraud prevention, tax, or legal obligations; other account data, including shared posts and stored photos, is deleted when you delete your account.'},{body:'Community safety: you can report a post or block its author from the post options menu. Blocking hides that person’s posts from your feeds. Ratzon reviews reports and can remove content or restrict an account. Contact jared@ratzonapp.com for privacy, safety, or account concerns.'},{body:'Rules: you must be at least 13. Post only a new photo you have the right to share. Do not post unlawful, abusive, sexually explicit, threatening, or deceptive content. Shabbat and exempt Jewish holidays do not require a check-in.'},{body:'Account deletion: Settings includes Delete account. It removes your profile, onboarding details, posts, and stored photos. Manage or cancel any recurring App Store contribution in your Apple subscriptions. Payment records required by law may be retained; active donations or disputes may need support review.'}].map((item,index)=><View key={index} style={{marginBottom:23}}><Text style={s.body}>{item.body}</Text></View>)}<Pressable accessibilityRole="link" onPress={()=>Linking.openURL('https://ratzonapp.com/privacy.html')}><Text style={[s.textLink,{textAlign:'center'}]}>View full privacy policy</Text></Pressable></>}

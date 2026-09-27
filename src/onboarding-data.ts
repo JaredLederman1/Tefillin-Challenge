@@ -13,6 +13,11 @@ export function ageOnDate(birthday:string|null|undefined,today:string):number|nu
  const age=nowYear-year-(nowMonth<month||(nowMonth===month&&nowDay<day)?1:0);
  return Number.isFinite(age)&&age>=0?age:null;
 }
+export function minimumSignupBirthday(today=new Date()) {
+ const cutoff=new Date(today.getFullYear()-13,today.getMonth(),today.getDate());
+ if(cutoff.getMonth()!==today.getMonth())cutoff.setDate(0);
+ return `${String(cutoff.getMonth()+1).padStart(2,'0')}/${String(cutoff.getDate()).padStart(2,'0')}/${cutoff.getFullYear()}`;
+}
 export function tefillinGoalProgress(balanceCents:number,targetCents=35000) {
  const available=Math.max(0,Number.isFinite(balanceCents)?balanceCents:0);
  return {available,remaining:Math.max(0,targetCents-available),percent:Math.min(100,available/targetCents*100)};
@@ -47,4 +52,12 @@ export function clampBirthday(year:number,month:number,day:number,today=new Date
   const lastDay=year===today.getFullYear()&&month===today.getMonth()+1?today.getDate():new Date(year,month,0).getDate();
   day=Math.max(1,Math.min(lastDay,day));
   return `${String(month).padStart(2,'0')}/${String(day).padStart(2,'0')}/${year}`;
+}
+export function clampSignupBirthday(year:number,month:number,day:number,today=new Date()) {
+ const [maxMonth,maxDay,maxYear]=minimumSignupBirthday(today).split('/').map(Number);
+ year=Math.max(1900,Math.min(maxYear,year));
+ month=Math.max(1,Math.min(year===maxYear?maxMonth:12,month));
+ const lastDay=year===maxYear&&month===maxMonth?maxDay:new Date(year,month,0).getDate();
+ day=Math.max(1,Math.min(lastDay,day));
+ return `${String(month).padStart(2,'0')}/${String(day).padStart(2,'0')}/${year}`;
 }

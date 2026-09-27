@@ -6,15 +6,14 @@ import {StatusBar} from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
 import {BirthdayWheel} from './BirthdayWheel';
 import {searchUniversities} from './universities';
-import {OnboardingValues,CommunityOption,parseBirthday,defaultBirthday,onboardingSteps,formatUsPhone,phoneDigits,ageOnDate} from './onboarding-data';
+import {OnboardingValues,CommunityOption,parseBirthday,onboardingSteps,formatUsPhone,phoneDigits,ageOnDate} from './onboarding-data';
 
 export function Onboarding({onComplete,communities,initialStep=0,initialValues}: {onComplete:(values:OnboardingValues)=>Promise<void>;communities:CommunityOption[];initialStep?:number;initialValues?:OnboardingValues}) {
   const [step,setStep]=useState(initialStep),[busy,setBusy]=useState(false),[error,setError]=useState('');
-  const [values,setValues]=useState<OnboardingValues>(initialValues||{fullName:'',gender:null,phone:'',school:'',birthday:defaultBirthday(),tradition:null,ownsTefillin:null,borrowSource:null,communityCode:''});
+  const [values,setValues]=useState<OnboardingValues>(initialValues||{fullName:'',gender:null,phone:'',school:'',birthday:'',tradition:null,ownsTefillin:null,borrowSource:null,communityCode:''});
   const titles=onboardingSteps();
   const lastStep=titles.length-1;
   const [birthdayScrolling,setBirthdayScrolling]=useState(false);
-  const [ageConfirmed,setAgeConfirmed]=useState(Boolean(initialValues));
   const [communityConsent,setCommunityConsent]=useState(Boolean(initialValues?.communityCode));
   const [schoolChosen,setSchoolChosen]=useState(false);
   const entryOpacity=useRef(new Animated.Value(initialStep===0?0:1)).current;
@@ -27,12 +26,12 @@ export function Onboarding({onComplete,communities,initialStep=0,initialValues}:
   async function next(skip=false) {
     if(busy||(step===4&&birthdayScrolling&&!skip))return;
     let draft=values;
-    if(skip){draft=step===lastStep?{...values,communityCode:''}:{...values,[step===3?'school':'birthday']:''};setValues(draft);}
+    if(skip){if(step===4)return;draft=step===lastStep?{...values,communityCode:''}:{...values,school:''};setValues(draft);}
     try{
       if(step===0&&!draft.fullName.trim())throw new Error('Enter your full name.');
       if(step===1&&!draft.gender)throw new Error('Choose Man or Woman.');
       if(step===2&&phoneDigits(draft.phone).length!==10)throw new Error('Enter a 10-digit phone number.');
-      if(step===4){if(!skip&&!draft.birthday){draft={...draft,birthday:defaultBirthday()};setValues(draft);}const parsed=parseBirthday(draft.birthday);const age=ageOnDate(parsed,new Date().toISOString().slice(0,10));if(age!==null&&age<13)throw new Error('You must be at least 13 years old to create an account.');if(!ageConfirmed)throw new Error('Confirm that you are at least 13 years old.');}
+      if(step===4){if(!draft.birthday)throw new Error('Select your birthday.');const parsed=parseBirthday(draft.birthday);const now=new Date();const today=`${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;const age=ageOnDate(parsed,today);if(age===null||age<13)throw new Error('You must be at least 13 years old to create an account.');}
       if(step===5&&!draft.tradition)throw new Error('Choose Ashkenazi or Sephardic.');
       if(step===6&&draft.ownsTefillin===null)throw new Error('Choose whether you own tefillin.');
       if(step===7&&draft.ownsTefillin===false&&!draft.borrowSource)throw new Error('Choose a borrowing option.');
@@ -57,7 +56,7 @@ export function Onboarding({onComplete,communities,initialStep=0,initialValues}:
           {suggestions.length>0&&<View style={s.suggestions}>{suggestions.map(school=><Pressable accessibilityRole="button" key={school} onPress={()=>{change({school});setSchoolChosen(true);}} style={s.suggestion}><Text style={s.suggestionText}>{school}</Text></Pressable>)}</View>}
           {!!values.school.trim()&&!schoolChosen&&!suggestions.length&&<Text style={s.hint}>You can continue with the school you entered.</Text>}
         </>}
-        {step===4&&<><BirthdayWheel onScrollingChange={setBirthdayScrolling} value={values.birthday} onChange={birthday=>change({birthday})}/><Pressable accessibilityRole="checkbox" accessibilityState={{checked:ageConfirmed}} onPress={()=>{setAgeConfirmed(value=>!value);setError('');}} style={s.confirmRow}><Ionicons name={ageConfirmed?'checkbox':'square-outline'} size={22} color="#062B60"/><Text style={s.confirmText}>I confirm that I am at least 13 years old.</Text></Pressable></>}
+        {step===4&&<BirthdayWheel onScrollingChange={setBirthdayScrolling} value={values.birthday} onChange={birthday=>change({birthday})}/>}
         {step===5&&<View style={{gap:12}}>{(['ashkenazi','sephardic'] as const).map(tradition=><Pressable accessibilityRole="radio" accessibilityState={{checked:values.tradition===tradition}} key={tradition} onPress={()=>change({tradition})} style={s.choice}><Text style={s.choiceText}>{tradition==='ashkenazi'?'Ashkenazi':'Sephardic'}</Text><View accessible={false} style={s.radioRing}>{values.tradition===tradition&&<View style={s.radioDot}/>}</View></Pressable>)}</View>}
         {step===6&&<View style={{gap:12}}>{([{value:true,label:'I own tefillin'},{value:false,label:'I do not own tefillin'}] as const).map(option=><Pressable accessibilityRole="radio" accessibilityState={{checked:values.ownsTefillin===option.value}} key={String(option.value)} onPress={()=>change({ownsTefillin:option.value,borrowSource:option.value?null:values.borrowSource})} style={s.choice}><Text style={s.choiceText}>{option.label}</Text><View accessible={false} style={s.radioRing}>{values.ownsTefillin===option.value&&<View style={s.radioDot}/>}</View></Pressable>)}</View>}
         {step===7&&values.ownsTefillin===false&&<View style={{gap:12}}>{([{value:'campus_chabad',label:'Campus Chabad'},{value:'friend',label:'Friend'},{value:'needs_help',label:'I need help'}] as const).map(option=><Pressable accessibilityRole="radio" accessibilityState={{checked:values.borrowSource===option.value}} key={option.value} onPress={()=>change({borrowSource:option.value})} style={s.choice}><Text style={s.choiceText}>{option.label}</Text><View accessible={false} style={s.radioRing}>{values.borrowSource===option.value&&<View style={s.radioDot}/>}</View></Pressable>)}</View>}
@@ -66,7 +65,7 @@ export function Onboarding({onComplete,communities,initialStep=0,initialValues}:
           <Text style={[s.hint,{fontStyle:'italic',textAlign:'center'}]}>Ask a community admin for a code, or skip for now.</Text>
         </>}
         {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}
-        <View style={s.actions}><Pressable accessibilityRole="button" disabled={busy||(step===4&&birthdayScrolling)} onPress={()=>next()} style={[s.continue,{opacity:(busy||(step===4&&birthdayScrolling))?.6:1}]}><Text style={s.continueText}>{busy?'Saving…':'Continue'}</Text></Pressable>{(step===3||step===4||step===lastStep)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>next(true)} style={s.skip}><Text style={s.skipText}>Skip for now</Text></Pressable>}</View>
+        <View style={s.actions}><Pressable accessibilityRole="button" disabled={busy||(step===4&&birthdayScrolling)} onPress={()=>next()} style={[s.continue,{opacity:(busy||(step===4&&birthdayScrolling))?.6:1}]}><Text style={s.continueText}>{busy?'Saving…':'Continue'}</Text></Pressable>{(step===3||step===lastStep)&&<Pressable accessibilityRole="button" disabled={busy} onPress={()=>next(true)} style={s.skip}><Text style={s.skipText}>Skip for now</Text></Pressable>}</View>
       </View>
     </Animated.View>
     </KeyboardAvoidingView>
