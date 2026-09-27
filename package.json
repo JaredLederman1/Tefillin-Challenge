@@ -34,6 +34,7 @@
     "typescript": "~6.0.3"
   },
   "scripts": {
+    "eas-build-post-install": "node scripts/patch-xcode26.cjs",
     "start": "expo start",
     "android": "expo start --android",
     "ios": "expo start --ios",
