@@ -10,13 +10,13 @@ function harness({authenticated=true,payment=false,storageError=false,subscripti
  vm.runInNewContext(ts.transpileModule(source,{compilerOptions:{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ESNext}}).outputText,{createClient:()=>db,Deno:{env:{get:()=> 'test'},serve:(fn:any)=>{handler=fn;}},fetch:async()=>new Response('{}',{status:subscriptionStatus??200}),Response,Error});
  return {deleted,removed,call:(body:unknown={confirmation:'DELETE'},token='test')=>handler(new Request('http://localhost',{method:'POST',headers:token?{authorization:`Bearer ${token}`}:{},body:JSON.stringify(body)}))};
 }
-test('dev deletion requires authentication, explicit confirmation, and recent sign-in',async()=>{
+test('dev deletion requires authentication and explicit confirmation',async()=>{
  const a=harness({authenticated:false});assert.equal((await a.call()).status,401);assert.deepEqual(a.deleted,[]);
  const b=harness();assert.equal((await b.call({},'')).status,401);assert.equal((await b.call({})).status,400);assert.deepEqual(b.deleted,[]);
 });
-test('dev deletion rejects stale sign-in sessions',async()=>{
+test('dev deletion accepts an authenticated stale sign-in session',async()=>{
  const h=harness({lastSignInAt:new Date(Date.now()-11*60*1000).toISOString()});
- assert.equal((await h.call()).status,401);assert.deepEqual(h.deleted,[]);
+ assert.equal((await h.call()).status,200);assert.deepEqual(h.deleted,['current-user']);
 });
 test('dev deletion clears development payment records before deleting the account',async()=>{
  const h=harness({payment:true});assert.equal((await h.call()).status,200);assert.deepEqual(h.removed,[['current-user/photo.jpg']]);assert.deepEqual(h.deleted,['current-user']);

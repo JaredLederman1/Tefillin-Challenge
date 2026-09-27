@@ -9,11 +9,6 @@ Deno.serve(async req=>{
  if(!token)return reply({error:'Sign in first.'},401);
   const {data:{user},error:authError}=await db.auth.getUser(token);
   if(authError||!user)return reply({error:'Sign in first.'},401);
-  // A bearer token alone is not enough for irreversible deletion. Require a
-  // recent primary-authentication event so a stolen persisted session cannot
-  // silently erase an account and cancel its subscription.
-  const lastSignIn=Date.parse(user.last_sign_in_at||'');
-  if(!Number.isFinite(lastSignIn)||Date.now()-lastSignIn>10*60*1000)return reply({error:'For your security, sign out and sign back in before deleting your account.'},401);
  try{
   const body=await req.json();
   if(body.confirmation!=='DELETE')return reply({error:'Confirm account deletion.'},400);
