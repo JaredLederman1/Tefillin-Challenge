@@ -42,7 +42,7 @@ async function appStoreToken() {
   if(!issuer||!keyId||!privateKey) throw new Error('App Store purchase verification is not configured yet.');
   const now=Math.floor(Date.now()/1000);
   const header=base64Url(text.encode(JSON.stringify({alg:'ES256',kid:keyId,typ:'JWT'})));
-  const claims=base64Url(text.encode(JSON.stringify({iss:issuer,iat:now,exp:now+300,aud:'appstoreconnect-v1'})));
+  const claims=base64Url(text.encode(JSON.stringify({iss:issuer,iat:now,exp:now+300,aud:'appstoreconnect-v1',bid:APPLE_BUNDLE_ID})));
   const key=await crypto.subtle.importKey('pkcs8',decodeBase64(privateKey.replace(/-----[^-]+-----|\s/g,'')),{name:'ECDSA',namedCurve:'P-256'},false,['sign']);
   const signature=await crypto.subtle.sign({name:'ECDSA',hash:'SHA-256'},key,text.encode(`${header}.${claims}`));
   return `${header}.${claims}.${base64Url(new Uint8Array(signature))}`;
@@ -78,7 +78,9 @@ export async function getAppleTransaction(transactionId:string, environment?:str
         if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.bundleId!==APPLE_BUNDLE_ID) throw new Error('Unexpected App Store transaction.');
         return transaction;
       } catch(error) {
-        latestError=error;
+        // Preserve the requested environment's error instead of masking it
+        // with an unrelated authentication failure from the fallback host.
+        if(candidate===requested) latestError=error;
       }
     }
   }

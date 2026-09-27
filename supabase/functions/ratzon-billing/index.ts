@@ -47,7 +47,7 @@ Deno.serve(async req=>{
   if(body.action==='status') {
    let walletSyncPending=false;
    let m=checked(await db().from('billing_memberships').select('*').eq('user_id',user.id).eq('livemode',mode).order('created_at',{ascending:false}).limit(1))[0];
-   if(m?.subscription_id){
+   if(m?.subscription_id?.startsWith('sub_')){
     const sub=await stripe(mode,`subscriptions/${m.subscription_id}`);
     await syncSubscription(mode,sub);
     try{await reconcileLatestInvoice(mode,m,sub);}catch(error){walletSyncPending=true;console.error('Invoice reconciliation pending',error.message);}
