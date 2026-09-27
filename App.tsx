@@ -734,7 +734,6 @@ function AppContent() {
       <Animated.View style={{gap:0,width:'100%',maxWidth:384,alignSelf:'center',opacity:homeActionsOpacity}}>
         <Pressable accessibilityRole="button" accessibilityLabel="Get Started" onPress={()=>openAuth(true)} style={({pressed})=>[s.getStarted,{opacity:pressed?.8:1}]}><Text style={s.getStartedText}>Get Started</Text></Pressable>
         <Pressable accessibilityRole="button" accessibilityLabel="Already have an account? Log In" onPress={()=>openAuth(false)} style={{alignItems:'center',justifyContent:'center',minHeight:44}}><Text style={{color:'#16365F',includeFontPadding:false,textAlignVertical:'center',fontSize:11}}>Already have an account? <Text style={{fontWeight:'600',textDecorationLine:'underline'}}>Log In</Text></Text></Pressable>
-        <Pressable accessibilityRole="button" accessibilityLabel="Explore demo" onPress={()=>setEntered(true)} style={{alignItems:'center',justifyContent:'center',minHeight:34}}><Text style={{color:'#516987',includeFontPadding:false,textAlignVertical:'center',fontSize:11,textDecorationLine:'underline'}}>Explore demo</Text></Pressable>
       </Animated.View>
     </SafeAreaView> : <>
       <View style={{flex:1}}>
