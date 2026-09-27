@@ -8,7 +8,7 @@ import {BirthdayWheel} from './BirthdayWheel';
 import {searchUniversities} from './universities';
 import {OnboardingValues,CommunityOption,parseBirthday,onboardingSteps,formatUsPhone,phoneDigits,ageOnDate} from './onboarding-data';
 
-export function Onboarding({onComplete,communities,initialStep=0,initialValues}: {onComplete:(values:OnboardingValues)=>Promise<void>;communities:CommunityOption[];initialStep?:number;initialValues?:OnboardingValues}) {
+export function Onboarding({onComplete,onExit,communities,initialStep=0,initialValues}: {onComplete:(values:OnboardingValues)=>Promise<void>;onExit:()=>Promise<void>;communities:CommunityOption[];initialStep?:number;initialValues?:OnboardingValues}) {
   const [step,setStep]=useState(initialStep),[busy,setBusy]=useState(false),[error,setError]=useState('');
   const [values,setValues]=useState<OnboardingValues>(initialValues||{fullName:'',gender:null,phone:'',school:'',birthday:'',tradition:null,ownsTefillin:null,borrowSource:null,communityCode:''});
   const titles=onboardingSteps();
@@ -45,7 +45,7 @@ export function Onboarding({onComplete,communities,initialStep=0,initialValues}:
     <LinearGradient colors={['#F8FBFF','#E8F1FF','#D7E7FF']} style={StyleSheet.absoluteFill}/>
     <KeyboardAvoidingView style={s.body} behavior={Platform.OS==='ios'?'padding':undefined}>
     <Animated.View style={{flex:1,opacity:entryOpacity}}>
-      <View style={s.progressHeader}><Pressable disabled={step===0||busy} accessibilityRole="button" accessibilityLabel="Previous step" onPress={()=>{setStep(n=>n-1);setError('');}} style={s.back}><Text style={[s.backText,{opacity:step===0?0:1}]}>‹</Text></Pressable><Text style={s.step}>Step {step+1} of {titles.length}</Text><Image source={require('../assets/media/logo-trimmed.png')} style={{width:27,height:34}} resizeMode="contain" accessibilityLabel="Ratzon"/></View>
+      <View style={s.progressHeader}><Pressable disabled={busy} accessibilityRole="button" accessibilityLabel={step===0?'Back to welcome':'Previous step'} onPress={async()=>{if(step>0){setStep(n=>n===8&&values.ownsTefillin===true?6:n-1);setError('');return;}setBusy(true);setError('');try{await onExit();}catch(e:any){setError(e.message||'Could not sign out. Please try again.');}finally{setBusy(false);}}} style={s.back}><Text style={s.backText}>‹</Text></Pressable><Text style={s.step}>Step {step+1} of {titles.length}</Text><Image source={require('../assets/media/logo-trimmed.png')} style={{width:27,height:34}} resizeMode="contain" accessibilityLabel="Ratzon"/></View>
       <View accessibilityRole="progressbar" accessibilityValue={{min:0,max:titles.length,now:step+1,text:`Step ${step+1} of ${titles.length}`}} style={s.progress}>{titles.map((_,i)=><View key={i} style={[s.segment,i<=step&&{backgroundColor:'#062B60'}]}/>)}</View>
       <View key={step} style={[s.content,{flex:1}]}> 
         <Text accessibilityRole="header" style={s.title}>{titles[step]}</Text>
