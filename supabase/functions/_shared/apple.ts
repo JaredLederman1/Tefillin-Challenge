@@ -48,7 +48,7 @@ async function appStoreToken() {
 async function fetchTransaction(transactionId:string,environment:'Sandbox'|'Production') {
   const host=environment==='Production'?'https://api.storekit.itunes.apple.com':'https://api.storekit-sandbox.itunes.apple.com';
   const response=await fetch(`${host}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`,{headers:{Authorization:`Bearer ${await appStoreToken()}`}});
-  if(!response.ok) throw new Error('Apple could not verify this purchase.');
+  if(!response.ok) throw new Error(`Apple could not verify this purchase (HTTP ${response.status}, ${environment}).`);
   const body=await response.json();
   if(typeof body.signedTransactionInfo!=='string') throw new Error('Apple returned an incomplete transaction record.');
   return decodePayload<AppleTransaction>(body.signedTransactionInfo);
@@ -62,14 +62,24 @@ async function fetchTransaction(transactionId:string,environment:'Sandbox'|'Prod
 export async function getAppleTransaction(transactionId:string, environment?:string|null) {
   if(!/^\d+$/.test(transactionId)) throw new Error('Invalid App Store transaction identifier.');
   const requested=environment==='Production'?'Production':'Sandbox';
-  let transaction:AppleTransaction;
-  try { transaction=await fetchTransaction(transactionId,requested); }
-  catch(error) {
-    if(requested==='Production') transaction=await fetchTransaction(transactionId,'Sandbox');
-    else throw error;
+  const alternate=requested==='Production'?'Sandbox':'Production';
+  let latestError:unknown;
+  // StoreKit can report a TestFlight transaction before it has propagated to
+  // the Server API. It can also omit/mislabel its environment in some bridge
+  // versions, so try both endpoints and retry the short propagation window.
+  for (const delay of [0, 1500, 3000]) {
+    if(delay) await new Promise(resolve=>setTimeout(resolve,delay));
+    for (const candidate of [requested,alternate] as const) {
+      try {
+        const transaction=await fetchTransaction(transactionId,candidate);
+        if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.bundleId!==APPLE_BUNDLE_ID) throw new Error('Unexpected App Store transaction.');
+        return transaction;
+      } catch(error) {
+        latestError=error;
+      }
+    }
   }
-  if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.bundleId!==APPLE_BUNDLE_ID) throw new Error('Unexpected App Store transaction.');
-  return transaction;
+  throw latestError instanceof Error ? latestError : new Error('Apple could not verify this purchase.');
 }
 
 /** Verify the transaction with Apple before any entitlement or wallet credit is created. */
