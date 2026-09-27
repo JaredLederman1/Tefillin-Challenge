@@ -35,7 +35,10 @@ function decodePayload<T>(signedValue: string): T {
 async function appStoreToken() {
   const issuer=Deno.env.get('APPLE_IAP_ISSUER_ID');
   const keyId=Deno.env.get('APPLE_IAP_KEY_ID');
-  const privateKey=Deno.env.get('APPLE_IAP_PRIVATE_KEY')?.replace(/\\n/g,'\n');
+  const encodedPrivateKey=Deno.env.get('APPLE_IAP_PRIVATE_KEY_BASE64');
+  const privateKey=encodedPrivateKey
+    ? new TextDecoder().decode(decodeBase64(encodedPrivateKey))
+    : Deno.env.get('APPLE_IAP_PRIVATE_KEY')?.replace(/\\n/g,'\n');
   if(!issuer||!keyId||!privateKey) throw new Error('App Store purchase verification is not configured yet.');
   const now=Math.floor(Date.now()/1000);
   const header=base64Url(text.encode(JSON.stringify({alg:'ES256',kid:keyId,typ:'JWT'})));
