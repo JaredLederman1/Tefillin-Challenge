@@ -1,7 +1,7 @@
 // Read-only authentication probe. Prints statuses only, never keys or JWTs.
 import fs from 'node:fs';
 import ts from 'typescript';
-import {execFileSync} from 'node:child_process';
+import {execFileSync,spawnSync} from 'node:child_process';
 const keyPath=process.argv[2];
 if(!keyPath) throw new Error('Pass the path to the existing Apple .p8 key.');
 const env={APPLE_IAP_ISSUER_ID:'f36669c4-e669-4907-bb3f-07d2a14c93d4',APPLE_IAP_KEY_ID:'D34SSFXV73',APPLE_IAP_PRIVATE_KEY_BASE64:fs.readFileSync(keyPath).toString('base64')};
@@ -20,7 +20,7 @@ for(const fixed of [false,true]) {
   if(fixed&&environment==='sandbox'&&(response.status!==404||errorCode!==4040010))process.exitCode=1;
  }
 }
-const js=ts.transpile(source.replace("npm:@apple/app-store-server-library@3.1.0",import.meta.resolve('@apple/app-store-server-library'))+'\nexport {appStoreToken};',{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
+const js=ts.transpile(source.replace("npm:jsrsasign@11.1.5",import.meta.resolve('jsrsasign'))+'\nexport {appStoreToken};',{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
 const {appStoreToken,getAppleTransaction,verifyApplePurchase,verifyDeviceTransaction}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 const response=await fetch('https://api.storekit-sandbox.itunes.apple.com/inApps/v1/notifications/history',{
  method:'POST',headers:{Authorization:`Bearer ${await appStoreToken()}`,'Content-Type':'application/json'},
@@ -38,16 +38,18 @@ if(response.ok){
   if(process.argv.includes('--signed-proof-check')){
    const detail=await fetch(`https://api.storekit-sandbox.itunes.apple.com/inApps/v1/transactions/${hint.transactionId}`,{headers:{Authorization:`Bearer ${await appStoreToken()}`}});
    const signed=(await detail.json()).signedTransactionInfo;
-   const savedBuffer=globalThis.Buffer;
-   let proof;
-   try{globalThis.Buffer=undefined;proof=await verifyDeviceTransaction(signed,'Sandbox');}
-   finally{globalThis.Buffer=savedBuffer;}
-   console.log(JSON.stringify({check:'Apple-signed transaction proof without global Buffer',passed:proof.transactionId===transaction.transactionId}));
+   const proof=await verifyDeviceTransaction(signed,'Sandbox');
+   console.log(JSON.stringify({check:'Apple-signed transaction proof',passed:proof.transactionId===transaction.transactionId}));
    const [header,payload,signature]=signed.split('.');
    let forgedRejected=false;
    try{await verifyDeviceTransaction(`${header}.${payload}.${signature[0]==='A'?'B':'A'}${signature.slice(1)}`,'Sandbox');}catch{forgedRejected=true;}
    console.log(JSON.stringify({check:'tampered transaction rejection',passed:forgedRejected}));
    if(!forgedRejected)process.exitCode=1;
+   if(process.argv.includes('--edge-runtime-check')){
+    const edge=spawnSync('npx',['--yes','deno','run','--allow-net','scripts/check-apple-edge.ts'],{input:signed,encoding:'utf8',timeout:90000});
+    if(edge.stdout.trim())console.log(edge.stdout.trim());
+    if(edge.status!==0){console.log(JSON.stringify({check:'Deno verifier process',status:edge.status,stderr:edge.stderr.replace(/[A-Za-z0-9_-]{80,}/g,'[redacted]').slice(-600)}));process.exitCode=1;}
+   }
   }
   console.log(JSON.stringify({check:'actual sandbox transaction lookup',verified:true,environment:transaction.environment,hasAccountToken:!!transaction.appAccountToken,expired:transaction.expiresDate<Date.now()}));
   console.log(JSON.stringify({check:'transaction metadata',renewal:transaction.transactionId!==transaction.originalTransactionId,uppercaseAccountToken:transaction.appAccountToken!==transaction.appAccountToken?.toLowerCase()}));

@@ -1,4 +1,3 @@
-import {Buffer} from 'node:buffer';
 const text = new TextEncoder();
 
 export const APPLE_MONTHLY_PRODUCT_ID = 'com.jaredlederman.tefillinchallenge.monthly_contribution';
@@ -41,23 +40,37 @@ async function appleRootCertificates(){
 /** A signed StoreKit transaction from the device proves access to this Apple purchase. */
 export async function verifyDeviceTransaction(signedTransactionInfo:string,environment?:string|null):Promise<AppleTransaction>{
  if(typeof signedTransactionInfo!=='string'||signedTransactionInfo.split('.').length!==3)throw new Error('A signed App Store transaction is required to restore a subscription.');
- // Supabase's Edge runtime does not provide Node's Buffer as a global, while
- // Apple's official verifier still references that global internally.
- Object.assign(globalThis,{Buffer});
- const {SignedDataVerifier,Environment}=await import('npm:@apple/app-store-server-library@3.1.0');
- const appAppleId=6812479409;
- // The Edge runtime may not reach Apple's OCSP responders. The verifier still
- // checks Apple's pinned certificate chain, dates, and JWS signature; the
- // authenticated Server API lookup below checks current purchase state.
- const verifier=new SignedDataVerifier((await appleRootCertificates()).map(bytes=>Buffer.from(bytes)),false,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
  let transaction:AppleTransaction;
- try{transaction=await verifier.verifyAndDecodeTransaction(signedTransactionInfo) as AppleTransaction;}
- catch(error){
-  const status=typeof (error as {status?:unknown})?.status==='number'?(error as {status:number}).status:null;
-  const cause=(error as {cause?:unknown})?.cause;
-  const kind=status===1?(cause instanceof Error?(cause.name==='JsonWebTokenError'?'signature':'runtime'):'chain'):null;
-  console.error('Apple device transaction verification failed',{status,kind});
-  throw new Error(`The App Store transaction could not be authenticated${status===null?'':` (verification code ${status}${kind?`-${kind}`:''})`}.`);
+ try{
+  // Supabase Edge does not implement X509Certificate.toString, which Apple's
+  // Node verifier calls before checking the chain. Verify the same Apple
+  // certificate chain and ES256 JWS using jsrsasign + WebCrypto instead.
+  // @ts-ignore Deno resolves npm: imports; the Expo TypeScript project does not.
+  const {X509}=await import('npm:jsrsasign@11.1.5');
+  const [encodedHeader,encodedPayload,encodedSignature]=signedTransactionInfo.split('.');
+  const header=JSON.parse(new TextDecoder().decode(decodeBase64(encodedHeader)));
+  if(header.alg!=='ES256'||!Array.isArray(header.x5c)||header.x5c.length!==3||header.x5c.some((cert:unknown)=>typeof cert!=='string'))throw new Error('Invalid Apple certificate chain.');
+  const certificates=header.x5c.slice(0,2).map((cert:string)=>{const parsed=new X509();parsed.readCertHex(Array.from(Uint8Array.from(atob(cert),c=>c.charCodeAt(0)),b=>b.toString(16).padStart(2,'0')).join(''));return parsed;});
+  const roots=(await appleRootCertificates()).map(bytes=>{const parsed=new X509();parsed.readCertHex(Array.from(bytes,b=>b.toString(16).padStart(2,'0')).join(''));return parsed;});
+  const [leaf,intermediate]=certificates;
+  if(!roots.some(root=>intermediate.getIssuerHex()===root.getSubjectHex()&&intermediate.verifySignature(root.getPublicKey()))||
+    leaf.getIssuerHex()!==intermediate.getSubjectHex()||!leaf.verifySignature(intermediate.getPublicKey())||
+    intermediate.getExtBasicConstraints()?.cA!==true||
+    !leaf.getExtInfo('1.2.840.113635.100.6.11.1')||!intermediate.getExtInfo('1.2.840.113635.100.6.2.1'))throw new Error('Invalid Apple certificate chain.');
+  transaction=JSON.parse(new TextDecoder().decode(decodeBase64(encodedPayload))) as AppleTransaction;
+  const signedDate=typeof (transaction as AppleTransaction&{signedDate?:unknown}).signedDate==='number'?(transaction as AppleTransaction&{signedDate:number}).signedDate:Date.now();
+  for(const cert of [...certificates,...roots.filter(root=>intermediate.getIssuerHex()===root.getSubjectHex()&&intermediate.verifySignature(root.getPublicKey()))]){
+   const parseDate=(value:string)=>{const year=value.length===13?(Number(value.slice(0,2))>=50?'19':'20')+value.slice(0,2):value.slice(0,4);const start=value.length===13?2:4;return Date.parse(`${year}-${value.slice(start,start+2)}-${value.slice(start+2,start+4)}T${value.slice(start+4,start+6)}:${value.slice(start+6,start+8)}:${value.slice(start+8,start+10)}Z`);};
+   if(!Number.isFinite(signedDate)||!Number.isFinite(parseDate(cert.getNotBefore()))||!Number.isFinite(parseDate(cert.getNotAfter()))||parseDate(cert.getNotBefore())>signedDate+60000||parseDate(cert.getNotAfter())<signedDate-60000)throw new Error('Expired Apple certificate chain.');
+  }
+  const publicKey=await crypto.subtle.importKey('spki',Uint8Array.from(leaf.getPublicKeyHex().match(/../g) as string[],byte=>parseInt(byte,16)),{name:'ECDSA',namedCurve:'P-256'},false,['verify']);
+  const signature=decodeBase64(encodedSignature);
+  if(signature.length!==64||!await crypto.subtle.verify({name:'ECDSA',hash:'SHA-256'},publicKey,signature,text.encode(`${encodedHeader}.${encodedPayload}`)))throw new Error('Invalid Apple transaction signature.');
+  if(transaction.bundleId!==APPLE_BUNDLE_ID||transaction.environment!==(environment==='Production'?'Production':'Sandbox'))throw new Error('Unexpected App Store transaction.');
+ }catch(error){
+  const safe=(value:unknown)=>String(value??'').replace(/[A-Za-z0-9_-]{80,}/g,'[redacted]').slice(0,180);
+  console.error('Apple device transaction verification failed',{causeName:error instanceof Error?safe(error.name):null,causeMessage:error instanceof Error?safe(error.message):null});
+  throw new Error('The App Store transaction could not be authenticated.');
  }
  if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.type!=='Auto-Renewable Subscription'||transaction.revocationDate||!transaction.expiresDate||transaction.expiresDate<Date.now())throw new Error('No active Ratzon subscription was found for this Apple account.');
  return transaction;
