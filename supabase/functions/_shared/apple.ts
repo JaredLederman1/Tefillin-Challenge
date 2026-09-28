@@ -1,3 +1,4 @@
+import {Buffer} from 'node:buffer';
 const text = new TextEncoder();
 
 export const APPLE_MONTHLY_PRODUCT_ID = 'com.jaredlederman.tefillinchallenge.monthly_contribution';
@@ -36,6 +37,9 @@ async function appleRootCertificate(){
 /** A signed StoreKit transaction from the device proves access to this Apple purchase. */
 export async function verifyDeviceTransaction(signedTransactionInfo:string,environment?:string|null):Promise<AppleTransaction>{
  if(typeof signedTransactionInfo!=='string'||signedTransactionInfo.split('.').length!==3)throw new Error('A signed App Store transaction is required to restore a subscription.');
+ // Supabase's Edge runtime does not provide Node's Buffer as a global, while
+ // Apple's official verifier still references that global internally.
+ Object.assign(globalThis,{Buffer});
  const {SignedDataVerifier,Environment}=await import('npm:@apple/app-store-server-library@3.1.0');
  const appAppleId=6812479409;
  const verifier=new SignedDataVerifier([Buffer.from(await appleRootCertificate())],true,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);

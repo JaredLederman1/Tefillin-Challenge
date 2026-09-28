@@ -38,8 +38,11 @@ if(response.ok){
   if(process.argv.includes('--signed-proof-check')){
    const detail=await fetch(`https://api.storekit-sandbox.itunes.apple.com/inApps/v1/transactions/${hint.transactionId}`,{headers:{Authorization:`Bearer ${await appStoreToken()}`}});
    const signed=(await detail.json()).signedTransactionInfo;
-   const proof=await verifyDeviceTransaction(signed,'Sandbox');
-   console.log(JSON.stringify({check:'Apple-signed transaction proof',passed:proof.transactionId===transaction.transactionId}));
+   const savedBuffer=globalThis.Buffer;
+   let proof;
+   try{globalThis.Buffer=undefined;proof=await verifyDeviceTransaction(signed,'Sandbox');}
+   finally{globalThis.Buffer=savedBuffer;}
+   console.log(JSON.stringify({check:'Apple-signed transaction proof without global Buffer',passed:proof.transactionId===transaction.transactionId}));
    const [header,payload,signature]=signed.split('.');
    let forgedRejected=false;
    try{await verifyDeviceTransaction(`${header}.${payload}.${signature[0]==='A'?'B':'A'}${signature.slice(1)}`,'Sandbox');}catch{forgedRejected=true;}

@@ -69,7 +69,7 @@ Deno.serve(async req=>{
    if(m?.subscription_id?.startsWith('sub_')){
     const sub=await stripe(mode,`subscriptions/${m.subscription_id}`);
     await syncSubscription(mode,sub);
-    try{await reconcileLatestInvoice(mode,m,sub);}catch(error){walletSyncPending=true;console.error('Invoice reconciliation pending',error.message);}
+    try{await reconcileLatestInvoice(mode,m,sub);}catch(error){walletSyncPending=true;console.error('Invoice reconciliation pending',error instanceof Error?error.message:String(error));}
     m=checked(await db().from('billing_memberships').select('*').eq('id',m.id).single());
    }
    const month=new Intl.DateTimeFormat('en-CA',{timeZone:'America/New_York',year:'numeric',month:'2-digit'}).format(new Date());
@@ -111,5 +111,5 @@ Deno.serve(async req=>{
    const sub=await stripe(mode,`subscriptions/${m.subscription_id}`,{cancel_at_period_end:'true'},`levav-cancel-${m.id}`);await syncSubscription(mode,sub);return reply({canceledAtPeriodEnd:true});
   }
   return reply({error:'Unknown action'},400);
- }catch(e){return reply({error:e.message},e.message==='Sign in required'?401:400);}
+ }catch(e){const message=e instanceof Error?e.message:String(e);return reply({error:message},message==='Sign in required'?401:400);}
 });
