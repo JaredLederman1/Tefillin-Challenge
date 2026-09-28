@@ -48,7 +48,8 @@ const Wheel=memo(function Wheel({label,items,value,onChange,onMotion,flex=1}:{la
 });
 export function BirthdayWheel({value,onChange,onScrollingChange}:{value:string;onChange:(value:string)=>void;onScrollingChange?:(moving:boolean)=>void}) {
   const today=new Date();
-  const [month,day,year]=(birthdayForInput(value)||minimumSignupBirthday(today)).split('/').map(Number);
+  const [month,day,year]=(birthdayForInput(value)||defaultBirthday(today)).split('/').map(Number);
+  useEffect(()=>{if(!value)onChange(defaultBirthday());},[value,onChange]);
   const [maxMonthValue,maxDayValue,maxYearValue]=minimumSignupBirthday(today).split('/').map(Number);
   const latest=useRef({month,day,year,onChange,onScrollingChange});latest.current={month,day,year,onChange,onScrollingChange};
   const activeWheels=useRef(new Set<string>());

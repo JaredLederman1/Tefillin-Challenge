@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import {readFileSync} from 'node:fs';
 import {wrapExemption,isRequiredWrapDay,canPostWrap,commentWordCount,isCholHamoed} from '../src/calendar.ts';
 import {streak} from '../src/challenge.ts';
-import {parseBirthday,clampBirthday,defaultBirthday,birthdayForInput} from '../src/onboarding-data.ts';
+import {parseBirthday,clampBirthday,clampSignupBirthday,defaultBirthday,birthdayForInput,minimumSignupBirthday} from '../src/onboarding-data.ts';
 import {searchUniversities} from '../src/universities.ts';
 test('Rosh Hashanah and consecutive Shabbat/holiday days preserve streak without adding days',()=>{
  assert.equal(wrapExemption('2026-09-13'),'Rosh Hashanah');
@@ -61,6 +61,12 @@ test('birthday wheels clamp leap dates, short months, and future dates',()=>{
 test('birthday wheels default to January 1, 2000',()=>{
  assert.equal(defaultBirthday(new Date(2026,8,13)),'01/01/2000');
  assert.equal(defaultBirthday(new Date(2024,1,29)),'01/01/2000');
+ assert.equal(minimumSignupBirthday(new Date(2026,8,28)),'09/28/2013');
+ assert.equal(clampSignupBirthday(2013,9,29,new Date(2026,8,28)),'09/28/2013');
+ assert.equal(clampSignupBirthday(2013,9,28,new Date(2026,8,28)),'09/28/2013');
+ const wheel=readFileSync(new URL('../src/BirthdayWheel.tsx',import.meta.url),'utf8');
+ assert.match(wheel,/birthdayForInput\(value\)\|\|defaultBirthday\(today\)/);
+ assert.match(wheel,/if\(!value\)onChange\(defaultBirthday\(\)\)/);
 });
 
 test('stored birthdays are formatted for the onboarding wheel',()=>{

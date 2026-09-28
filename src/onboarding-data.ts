@@ -45,7 +45,7 @@ export function birthdayForInput(value:string|null|undefined) {
  return match?`${match[2]}/${match[3]}/${match[1]}`:value||'';
 }
 
-export function defaultBirthday(today=new Date()) {return clampBirthday(2000,1,1,today);}
+export function defaultBirthday(today=new Date()) {return clampSignupBirthday(2000,1,1,today);}
 export function clampBirthday(year:number,month:number,day:number,today=new Date()) {
   year=Math.max(1900,Math.min(today.getFullYear(),year));
   month=Math.max(1,Math.min(year===today.getFullYear()?today.getMonth()+1:12,month));
