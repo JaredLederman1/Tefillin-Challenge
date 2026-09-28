@@ -17,21 +17,25 @@ type AppleTransaction = {
   type: string;
 };
 
-// Apple Root CA - G3, downloaded from Apple's PKI site. Pin its digest so a
-// substituted certificate cannot turn a forged device transaction into proof.
-const APPLE_ROOT_CA_URL='https://www.apple.com/certificateauthority/AppleRootCA-G3.cer';
-const APPLE_ROOT_CA_SHA256='63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179';
-let rootCertificate:Promise<Uint8Array>|undefined;
-async function appleRootCertificate(){
- rootCertificate??=(async()=>{
-  const response=await fetch(APPLE_ROOT_CA_URL);
+// StoreKit and App Store Server API JWSs can chain to different Apple roots.
+// Pin all roots from Apple's PKI listing rather than trusting any certificate
+// sent in an unverified JWS header.
+const APPLE_ROOT_CAS=[
+ ['https://www.apple.com/appleca/AppleIncRootCertificate.cer','b0b1730ecbc7ff4505142c49f1295e6eda6bcaed7e2c68c5be91b5a11001f024'],
+ ['https://www.apple.com/certificateauthority/AppleRootCA-G2.cer','c2b9b042dd57830e7d117dac55ac8ae19407d38e41d88f3215bc3a890444a050'],
+ ['https://www.apple.com/certificateauthority/AppleRootCA-G3.cer','63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179']
+] as const;
+let rootCertificates:Promise<Uint8Array[]>|undefined;
+async function appleRootCertificates(){
+ rootCertificates??=Promise.all(APPLE_ROOT_CAS.map(async([url,expectedDigest])=>{
+  const response=await fetch(url);
   if(!response.ok)throw new Error('Apple purchase verification is temporarily unavailable.');
   const bytes=new Uint8Array(await response.arrayBuffer());
   const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
-  if(digest!==APPLE_ROOT_CA_SHA256)throw new Error('Apple purchase verification certificate changed.');
+  if(digest!==expectedDigest)throw new Error('Apple purchase verification certificate changed.');
   return bytes;
- })().catch(error=>{rootCertificate=undefined;throw error;});
- return rootCertificate;
+ })).catch(error=>{rootCertificates=undefined;throw error;});
+ return rootCertificates;
 }
 
 /** A signed StoreKit transaction from the device proves access to this Apple purchase. */
@@ -45,13 +49,15 @@ export async function verifyDeviceTransaction(signedTransactionInfo:string,envir
  // The Edge runtime may not reach Apple's OCSP responders. The verifier still
  // checks Apple's pinned certificate chain, dates, and JWS signature; the
  // authenticated Server API lookup below checks current purchase state.
- const verifier=new SignedDataVerifier([Buffer.from(await appleRootCertificate())],false,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
+ const verifier=new SignedDataVerifier((await appleRootCertificates()).map(bytes=>Buffer.from(bytes)),false,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
  let transaction:AppleTransaction;
  try{transaction=await verifier.verifyAndDecodeTransaction(signedTransactionInfo) as AppleTransaction;}
  catch(error){
   const status=typeof (error as {status?:unknown})?.status==='number'?(error as {status:number}).status:null;
-  console.error('Apple device transaction verification failed',{status});
-  throw new Error(`The App Store transaction could not be authenticated${status===null?'':` (verification code ${status})`}.`);
+  const cause=(error as {cause?:unknown})?.cause;
+  const kind=status===1?(cause instanceof Error?(cause.name==='JsonWebTokenError'?'signature':'runtime'):'chain'):null;
+  console.error('Apple device transaction verification failed',{status,kind});
+  throw new Error(`The App Store transaction could not be authenticated${status===null?'':` (verification code ${status}${kind?`-${kind}`:''})`}.`);
  }
  if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.type!=='Auto-Renewable Subscription'||transaction.revocationDate||!transaction.expiresDate||transaction.expiresDate<Date.now())throw new Error('No active Ratzon subscription was found for this Apple account.');
  return transaction;
