@@ -42,10 +42,17 @@ export async function verifyDeviceTransaction(signedTransactionInfo:string,envir
  Object.assign(globalThis,{Buffer});
  const {SignedDataVerifier,Environment}=await import('npm:@apple/app-store-server-library@3.1.0');
  const appAppleId=6812479409;
- const verifier=new SignedDataVerifier([Buffer.from(await appleRootCertificate())],true,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
+ // The Edge runtime may not reach Apple's OCSP responders. The verifier still
+ // checks Apple's pinned certificate chain, dates, and JWS signature; the
+ // authenticated Server API lookup below checks current purchase state.
+ const verifier=new SignedDataVerifier([Buffer.from(await appleRootCertificate())],false,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
  let transaction:AppleTransaction;
  try{transaction=await verifier.verifyAndDecodeTransaction(signedTransactionInfo) as AppleTransaction;}
- catch{throw new Error('The App Store transaction could not be authenticated.');}
+ catch(error){
+  const status=typeof (error as {status?:unknown})?.status==='number'?(error as {status:number}).status:null;
+  console.error('Apple device transaction verification failed',{status});
+  throw new Error(`The App Store transaction could not be authenticated${status===null?'':` (verification code ${status})`}.`);
+ }
  if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.type!=='Auto-Renewable Subscription'||transaction.revocationDate||!transaction.expiresDate||transaction.expiresDate<Date.now())throw new Error('No active Ratzon subscription was found for this Apple account.');
  return transaction;
 }
