@@ -16,6 +16,45 @@ type AppleTransaction = {
   type: string;
 };
 
+// Apple Root CA - G3, downloaded from Apple's PKI site. Pin its digest so a
+// substituted certificate cannot turn a forged device transaction into proof.
+const APPLE_ROOT_CA_URL='https://www.apple.com/certificateauthority/AppleRootCA-G3.cer';
+const APPLE_ROOT_CA_SHA256='63343abfb89a6a03ebb57e9b3f5fa7be7c4f5c756f3017b3a8c488c3653e9179';
+let rootCertificate:Promise<Uint8Array>|undefined;
+async function appleRootCertificate(){
+ rootCertificate??=(async()=>{
+  const response=await fetch(APPLE_ROOT_CA_URL);
+  if(!response.ok)throw new Error('Apple purchase verification is temporarily unavailable.');
+  const bytes=new Uint8Array(await response.arrayBuffer());
+  const digest=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',bytes)),b=>b.toString(16).padStart(2,'0')).join('');
+  if(digest!==APPLE_ROOT_CA_SHA256)throw new Error('Apple purchase verification certificate changed.');
+  return bytes;
+ })().catch(error=>{rootCertificate=undefined;throw error;});
+ return rootCertificate;
+}
+
+/** A signed StoreKit transaction from the device proves access to this Apple purchase. */
+export async function verifyDeviceTransaction(signedTransactionInfo:string,environment?:string|null):Promise<AppleTransaction>{
+ if(typeof signedTransactionInfo!=='string'||signedTransactionInfo.split('.').length!==3)throw new Error('A signed App Store transaction is required to restore a subscription.');
+ const {SignedDataVerifier,Environment}=await import('npm:@apple/app-store-server-library@3.1.0');
+ const appAppleId=6812479409;
+ const verifier=new SignedDataVerifier([Buffer.from(await appleRootCertificate())],true,environment==='Production'?Environment.PRODUCTION:Environment.SANDBOX,APPLE_BUNDLE_ID,appAppleId);
+ let transaction:AppleTransaction;
+ try{transaction=await verifier.verifyAndDecodeTransaction(signedTransactionInfo) as AppleTransaction;}
+ catch{throw new Error('The App Store transaction could not be authenticated.');}
+ if(transaction.productId!==APPLE_MONTHLY_PRODUCT_ID||transaction.type!=='Auto-Renewable Subscription'||transaction.revocationDate||!transaction.expiresDate||transaction.expiresDate<Date.now())throw new Error('No active Ratzon subscription was found for this Apple account.');
+ return transaction;
+}
+
+/** Tell Apple which current Ratzon account owns a restored, orphaned purchase. */
+export async function setAppleAppAccountToken(originalTransactionId:string,accountToken:string,environment:'Sandbox'|'Production'){
+ if(!/^\d+$/.test(originalTransactionId)||!ConfigUUID.test(accountToken))throw new Error('Invalid subscription recovery request.');
+ const host=environment==='Production'?'https://api.storekit.apple.com':'https://api.storekit-sandbox.apple.com';
+ const response=await fetch(`${host}/inApps/v1/transactions/${encodeURIComponent(originalTransactionId)}/appAccountToken`,{method:'PUT',headers:{Authorization:`Bearer ${await appStoreToken()}`,'Content-Type':'application/json'},body:JSON.stringify({appAccountToken:accountToken})});
+ if(!response.ok)throw new Error(`Apple could not restore this subscription (HTTP ${response.status}).`);
+}
+const ConfigUUID=/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
 function base64Url(bytes: Uint8Array) {
   let binary=''; for (const byte of bytes) binary+=String.fromCharCode(byte);
   return btoa(binary).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');

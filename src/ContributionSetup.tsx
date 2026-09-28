@@ -4,7 +4,7 @@ import {SafeAreaView} from 'react-native-safe-area-context';
 import {LinearGradient} from 'expo-linear-gradient';
 import {StatusBar} from 'expo-status-bar';
 import Ionicons from '@expo/vector-icons/Ionicons';
-import {useIAP,type Purchase} from 'expo-iap';
+import {useIAP,currentEntitlementIOS,type Purchase} from 'expo-iap';
 import {isUserCancelledError} from 'expo-iap';
 import {confirmPurchaseSteps,withPurchaseTimeout} from './purchase-confirmation';
 import {isSubscriptionConflict} from './subscription-conflict';
@@ -18,13 +18,13 @@ export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,o
  const processing=useRef(false),attempted=useRef(new Set<string>()),pendingPurchase=useRef<Purchase|null>(null);
  const mounted=useRef(true);
  useEffect(()=>{mounted.current=true;return()=>{mounted.current=false;};},[]);
- async function confirm(purchase:Purchase,retry=false){
+ async function confirm(purchase:Purchase,retry=false,restored=false){
   if(purchase.productId!==MONTHLY_CONTRIBUTION_PRODUCT_ID||processing.current)return;
   const id=purchase.transactionId||purchase.id;
   if(!retry&&pendingPurchase.current)return;
   if(!retry&&attempted.current.has(id))return;
   attempted.current.add(id);processing.current=true;pendingPurchase.current=purchase;setBusy(true);setError('');
-  try{await confirmPurchaseSteps(()=>purchaseHandler.current(purchase),()=>finishTransaction({purchase,isConsumable:false}),()=>refresh.current());pendingPurchase.current=null;}
+  try{await confirmPurchaseSteps(()=>purchaseHandler.current(purchase),restored?async()=>{}:()=>finishTransaction({purchase,isConsumable:false}),()=>refresh.current());pendingPurchase.current=null;}
   catch(e:any){if(mounted.current)setError(e.message||'We could not confirm this App Store purchase.');}
   finally{processing.current=false;if(mounted.current)setBusy(false);}
  }
@@ -34,6 +34,18 @@ export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,o
   onError:(storeError)=>{if(!processing.current)setBusy(false);setError(storeError.message||'The App Store is unavailable right now.');}
  });
  useEffect(()=>{if(Platform.OS!=='ios'){setError('Monthly contributions are available through the iPhone app.');return;}if(connected)void fetchProducts({skus:[MONTHLY_CONTRIBUTION_PRODUCT_ID],type:'subs'}).catch(e=>setError(e.message||'Could not load the App Store purchase.'));},[connected,fetchProducts]);
+ const restoreChecked=useRef(false);
+ async function restoreExisting(quiet=false){
+  if(Platform.OS!=='ios'||processing.current)return;
+  setBusy(true);setError('');
+  try{
+   const existing=await currentEntitlementIOS(MONTHLY_CONTRIBUTION_PRODUCT_ID);
+   if(existing)await confirm(existing,true,true);
+   else if(mounted.current&&!quiet)setError('No active Ratzon subscription was found for this Apple account.');
+  }catch(e:any){if(mounted.current)setError(e.message||'Could not restore the App Store subscription.');}
+  finally{if(mounted.current&&!processing.current)setBusy(false);}
+ }
+ useEffect(()=>{if(Platform.OS==='ios'&&connected&&!restoreChecked.current){restoreChecked.current=true;void restoreExisting(true);}},[connected]);
  useEffect(()=>{setReady(subscriptions.some(product=>product.id===MONTHLY_CONTRIBUTION_PRODUCT_ID));},[subscriptions]);
  useEffect(()=>{if(!busy)return;const timer=setTimeout(()=>{if(!processing.current&&mounted.current){setBusy(false);setError('The App Store did not finish responding. Please try again.');}},90000);return()=>clearTimeout(timer);},[busy]);
  async function pay(){if(busy)return;if(pendingPurchase.current){await confirm(pendingPurchase.current,true);return;}setBusy(true);setError('');try{await withPurchaseTimeout(requestPurchase({request:{apple:{sku:MONTHLY_CONTRIBUTION_PRODUCT_ID,appAccountToken}},type:'subs'}),'The App Store did not finish responding. Please try again.',90000);}catch(e:any){if(!processing.current){setBusy(false);if(!isUserCancelledError(e))setError(e.message||'Could not open the App Store purchase.');}}}
@@ -44,6 +56,7 @@ export function ContributionSetup({appAccountToken,onPurchase,onRefresh,onSkip,o
   <Text style={s.text}>Your contribution enters the challenge every month. When you wrap tefillin on every required day, you earn a share of the challenge pool. Your available earnings are then donated to the charity you choose. Cancel anytime in your Apple subscriptions.</Text>
   <Text style={s.purchaseNote}>$2.29/month through the App Store, including payment and technology costs. Renews monthly until canceled.</Text>
   <Pressable accessibilityRole="button" accessibilityLabel={pendingPurchase.current?'Retry purchase confirmation':'Continue to App Store payment'} style={[s.button,{opacity:busy||(!ready&&!pendingPurchase.current)?0.5:1}]} disabled={busy||(!ready&&!pendingPurchase.current)} onPress={pay}><Text style={s.buttonText}>{busy?'Confirming purchase…':pendingPurchase.current?'Retry confirmation':'Continue to Payment'}</Text></Pressable>
+  <Pressable accessibilityRole="button" accessibilityLabel="Restore active Apple subscription" disabled={busy} onPress={()=>{void restoreExisting();}} style={s.skip}><Text style={s.skipText}>Already subscribed? Restore</Text></Pressable>
   {!ready&&!error&&<Text style={s.status}>Loading App Store purchase…</Text>}
   {!!onSkip&&<Pressable accessibilityRole="button" accessibilityLabel="Skip monthly contribution for testing" disabled={busy} onPress={onSkip} style={s.skip}><Text style={s.skipText}>Skip for now</Text></Pressable>}
   {!!error&&<Text accessibilityRole="alert" style={s.error}>{error}</Text>}

@@ -20,8 +20,8 @@ for(const fixed of [false,true]) {
   if(fixed&&environment==='sandbox'&&(response.status!==404||errorCode!==4040010))process.exitCode=1;
  }
 }
-const js=ts.transpile(source+'\nexport {appStoreToken};',{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
-const {appStoreToken,getAppleTransaction,verifyApplePurchase}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+const js=ts.transpile(source.replace("npm:@apple/app-store-server-library@3.1.0",import.meta.resolve('@apple/app-store-server-library'))+'\nexport {appStoreToken};',{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
+const {appStoreToken,getAppleTransaction,verifyApplePurchase,verifyDeviceTransaction}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
 const response=await fetch('https://api.storekit-sandbox.itunes.apple.com/inApps/v1/notifications/history',{
  method:'POST',headers:{Authorization:`Bearer ${await appStoreToken()}`,'Content-Type':'application/json'},
  body:JSON.stringify({startDate:Date.now()-86400000,endDate:Date.now()})
@@ -35,6 +35,17 @@ if(response.ok){
  const hint=transactions.sort((a,b)=>b.purchaseDate-a.purchaseDate)[0];
  if(hint){
   const transaction=await getAppleTransaction(hint.transactionId,'Sandbox');
+  if(process.argv.includes('--signed-proof-check')){
+   const detail=await fetch(`https://api.storekit-sandbox.itunes.apple.com/inApps/v1/transactions/${hint.transactionId}`,{headers:{Authorization:`Bearer ${await appStoreToken()}`}});
+   const signed=(await detail.json()).signedTransactionInfo;
+   const proof=await verifyDeviceTransaction(signed,'Sandbox');
+   console.log(JSON.stringify({check:'Apple-signed transaction proof',passed:proof.transactionId===transaction.transactionId}));
+   const [header,payload,signature]=signed.split('.');
+   let forgedRejected=false;
+   try{await verifyDeviceTransaction(`${header}.${payload}.${signature[0]==='A'?'B':'A'}${signature.slice(1)}`,'Sandbox');}catch{forgedRejected=true;}
+   console.log(JSON.stringify({check:'tampered transaction rejection',passed:forgedRejected}));
+   if(!forgedRejected)process.exitCode=1;
+  }
   console.log(JSON.stringify({check:'actual sandbox transaction lookup',verified:true,environment:transaction.environment,hasAccountToken:!!transaction.appAccountToken,expired:transaction.expiresDate<Date.now()}));
   console.log(JSON.stringify({check:'transaction metadata',renewal:transaction.transactionId!==transaction.originalTransactionId,uppercaseAccountToken:transaction.appAccountToken!==transaction.appAccountToken?.toLowerCase()}));
   if(process.argv.includes('--account-check')){

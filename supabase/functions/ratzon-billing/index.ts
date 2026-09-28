@@ -1,5 +1,5 @@
 import {db,reply,cors,stripe,member,checked,syncSubscription} from '../_shared/billing.ts';
-import {verifyApplePurchase} from '../_shared/apple.ts';
+import {verifyApplePurchase,verifyDeviceTransaction,setAppleAppAccountToken,getAppleTransaction} from '../_shared/apple.ts';
 
 // Webhooks remain the primary path, but this closes the gap when a device has
 // confirmed Apple Pay and Stripe has not yet delivered its invoice event.
@@ -30,7 +30,26 @@ Deno.serve(async req=>{
   const user=await member(req);const body=await req.json();const mode=body.livemode===true;
   if(body.action==='withdraw'||body.action==='onboard') return reply({error:'Payouts have been retired. Use donations instead.'},410);
   if(body.action==='apple-purchase') {
-   const transaction=await verifyApplePurchase(body,user.id);
+   let transaction;
+   try{transaction=await verifyApplePurchase(body,user.id);}
+   catch(error){
+    if(!(error instanceof Error)||!error.message.includes('linked to a different Ratzon account'))throw error;
+    // A deleted app account can leave an active StoreKit subscription behind.
+    // Only a signed transaction supplied by StoreKit on this device may claim it.
+    const current=await getAppleTransaction(body.transactionId,body.environment);
+    const device=await verifyDeviceTransaction(body.signedTransactionInfo,current.environment);
+    if(device.transactionId!==body.transactionId||device.originalTransactionId!==body.originalTransactionId)throw new Error('App Store transaction validation failed.');
+    if(current.transactionId!==device.transactionId||current.originalTransactionId!==device.originalTransactionId||current.appAccountToken===user.id||current.revocationDate||!current.expiresDate||current.expiresDate<Date.now())throw new Error('App Store transaction validation failed.');
+    const priorAccount=current.appAccountToken;
+    if(!priorAccount)throw new Error('This subscription needs support to restore.');
+    const oldUser=await db().auth.admin.getUserById(priorAccount);
+    if(oldUser.data?.user)throw new Error('This Apple subscription is linked to another active Ratzon account. Sign in to that account.');
+    if(oldUser.error&&!/not found/i.test(oldUser.error.message))throw oldUser.error;
+    const claimed=checked(await db().from('billing_memberships').select('user_id').eq('subscription_id',current.originalTransactionId).maybeSingle());
+    if(claimed&&claimed.user_id!==user.id)throw new Error('This subscription is already claimed by another Ratzon account. Contact support.');
+    await setAppleAppAccountToken(current.originalTransactionId,user.id,current.environment);
+    transaction=await verifyApplePurchase(body,user.id);
+   }
    const membership=checked(await db().rpc('reserve_membership',{member:user.id,mode:true,cents:180,covers_fee:false}));
    if(membership.subscription_id&&membership.subscription_id!==transaction.originalTransactionId) return reply({error:'Another App Store subscription is already active.'},409);
    checked(await db().from('billing_memberships').update({subscription_id:transaction.originalTransactionId,status:'active',cancel_at_period_end:false}).eq('id',membership.id).eq('livemode',true));
