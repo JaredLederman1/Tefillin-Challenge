@@ -1,0 +1,62 @@
+import assert from 'node:assert/strict';
+const {PGlite}=await import(process.argv[2]||'@electric-sql/pglite');
+import {readFileSync,readdirSync} from 'node:fs';
+const db=new PGlite();
+await db.exec(`
+create role anon;create role authenticated;create role service_role;
+create schema auth;
+create table auth.users(id uuid primary key,email text,raw_user_meta_data jsonb default '{}'::jsonb,raw_app_meta_data jsonb default '{}'::jsonb);
+create table auth.identities(id uuid primary key,user_id uuid references auth.users(id) on delete cascade,provider_id text,provider text,identity_data jsonb);
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claim.sub',true),'')::uuid $$;
+create schema storage;
+create table storage.buckets(id text primary key,name text,public boolean,file_size_limit bigint,allowed_mime_types text[]);
+create table storage.objects(id uuid default gen_random_uuid(),bucket_id text,name text,created_at timestamptz default now());
+create function storage.foldername(text) returns text[] language sql as $$ select string_to_array($1,'/') $$;
+create schema cron;
+create table cron.job(jobid bigint,jobname text);
+create function cron.schedule(text,text,text) returns bigint language sql as $$ select 1::bigint $$;
+create function cron.unschedule(bigint) returns boolean language sql as $$ select true $$;
+`);
+const dir=new URL('../supabase/migrations/',import.meta.url);
+for(const file of readdirSync(dir).filter(f=>f.endsWith('.sql')).sort()){
+ try {await db.exec(readFileSync(new URL(file,dir),'utf8').replace('create extension if not exists pg_cron;',''));}
+ catch(e){console.error('FAILED',file,e.message);process.exitCode=1;await db.close();process.exit(1);}
+}
+console.log('Entire historical migration chain applied (pg_cron mocked)');
+await db.exec(readFileSync(new URL('../tests/apple-identity-onboarding.sql',import.meta.url),'utf8'));
+console.log('Latest Apple identity/onboarding SQL fixture passed');
+await db.exec("insert into auth.users(id,email) values ('00000000-0000-0000-0000-000000000001','one@example.com'),('00000000-0000-0000-0000-000000000002','two@example.com')");
+await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000001']);
+await db.query(`select record_app_subscription($1,'100','101','Sandbox',now(),now()+interval '2 months')`,['00000000-0000-0000-0000-000000000001']);
+assert.equal((await db.query('select count(*)::integer n from app_subscription_transactions')).rows[0].n,2);
+const newerExpiry=(await db.query('select access_expires_at::text expiry from billing_memberships')).rows[0].expiry;
+await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000001']);
+assert.equal((await db.query('select access_expires_at::text expiry from billing_memberships')).rows[0].expiry,newerExpiry);
+await assert.rejects(db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000002']),/another account/);
+await db.exec(`set request.jwt.claim.sub='00000000-0000-0000-0000-000000000001';`);
+let status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.eligible,true);assert.equal(status.candidates.length,3);
+const candidate=status.candidates[1].id;
+await db.query('select cast_charity_vote($1)',[candidate]);
+await assert.rejects(db.query('select cast_charity_vote($1)',[status.candidates[0].id]),/already been recorded/);
+status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.voteCauseId,candidate);assert.equal(status.candidates[1].votes,1);
+await db.exec(`set request.jwt.claim.sub='00000000-0000-0000-0000-000000000002';`);
+await assert.rejects(db.query('select cast_charity_vote($1)',[candidate]),/active subscription/);
+await assert.rejects(db.query('select close_charity_vote_round($1)',[status.month]),/still open/);
+await db.query(`update charity_vote_rounds set closes_at=now()-interval '1 second' where month=$1`,[status.month]);
+assert.equal((await db.query('select close_charity_vote_round($1) winner',[status.month])).rows[0].winner,candidate);
+await db.query(`select publish_company_donation($1,180,now(),'https://example.com/receipt')`,[status.month]);
+status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.reports[0].donationCents,180);
+await db.exec('set role authenticated');
+await assert.rejects(db.query(`select close_charity_vote_round($1)`,[status.month]),/permission denied/);
+await assert.rejects(db.query(`select * from charity_votes`),/permission denied/);
+await assert.rejects(db.query(`select request_donation(null,true,null,null,180)`),/permission denied/);
+await db.exec('reset role');
+await db.exec(`delete from billing_memberships where user_id='00000000-0000-0000-0000-000000000001';delete from profiles where id='00000000-0000-0000-0000-000000000001';`);
+assert.equal((await db.query('select count(*)::integer n from app_subscription_transactions where user_id is null')).rows[0].n,2);
+await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000002']);
+assert.equal((await db.query("select user_id from app_subscription_transactions where transaction_id='100'")).rows[0].user_id,'00000000-0000-0000-0000-000000000002');
+console.log('Subscription ownership/idempotency, voting eligibility/one vote, closure/winner/report, role privacy and retired actions passed');
+await db.close();

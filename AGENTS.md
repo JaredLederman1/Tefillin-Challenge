@@ -13,8 +13,8 @@
 
 - Vertically center labels, titles, dates, captions, icons, and selection indicators within their rows and controls. Use balanced vertical spacing and avoid font padding that makes text look off-center. Retain the specified horizontal alignment and page layout.
 
-- Bottom navigation has exactly three tabs: Community, Today (raised center R), and You. Wallet balance, donations, and transaction activity live inside You; there are no separate Challenge or Wallet tabs.
+- Bottom navigation has exactly three tabs: Community, Today (raised center R), and You. Monthly charity voting and community impact live inside You; there are no personal monetary wallets or separate Challenge or Wallet tabs.
 
-- Signup asks Full Name, School (skip allowed), Birthday (skip allowed), Tradition, and whether the member owns tefillin. Non-owners also choose Campus Chabad, Friend, or I Need Help for borrowing. Do not ask religiosity.
-- You shows the member's private full name, school and age when provided, Wallet, and My Tefillin Goal only for members who do not own a pair. Keep wallet activity and account actions collapsed by default.
-- The tefillin goal is a $350 planning estimate contingent on an approved student subsidy, not a guaranteed offer. Count settled available balance only. Do not debit funds or promise shipment until the supplier, eligibility, and final price are confirmed.
+- Apple signup reuses the name supplied by Apple and skips the name prompt, including when Apple withholds a returning user's name. Signup asks Phone Number, School (skip allowed), Birthday (required for the 13+ age check), Tradition, and whether the member owns tefillin. Do not ask gender. Non-owners see guidance to contact their nearest Chabad center on campus or in their local community to arrange tefillin to use. Do not collect a borrowing choice or offer tefillin purchases. Do not ask religiosity.
+- You shows monthly charity voting and confirmed company donation history. Personal profile information and account actions remain in Settings. Voting does not allocate a personal balance.
+- Membership is a standard App Store subscription for ongoing digital app access, independent of check-in completion. Ratzon donates 100% of positive monthly net profits after documented fees, refunds, applicable taxes, and operating costs. Monthly member voting selects the charity recipient. Do not promise a fixed donation per subscription or create member earnings, cash-valued tokens, redistribution, or tefillin savings goals.

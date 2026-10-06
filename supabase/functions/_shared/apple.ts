@@ -164,6 +164,25 @@ export async function verifyApplePurchase(input:{transactionId:string;originalTr
   if(transaction.transactionId!==input.transactionId||transaction.originalTransactionId!==input.originalTransactionId||transaction.revocationDate) throw new Error('App Store transaction validation failed.');
   if(transaction.appAccountToken?.toLowerCase()!==expectedAccountToken.toLowerCase()) throw new Error('This Apple subscription is linked to a different Ratzon account. Sign in to the original account or contact support if it was deleted.');
   if(transaction.type!=='Auto-Renewable Subscription') throw new Error('This App Store product is not a subscription.');
-  if(transaction.expiresDate&&transaction.expiresDate<Date.now()) throw new Error('This subscription is no longer active.');
+  if(!transaction.expiresDate||transaction.expiresDate<=Date.now()) throw new Error('This subscription is no longer active.');
   return transaction;
+}
+
+/** Fetch current renewal entitlement, rather than the original expired purchase. */
+export async function getAppleSubscriptionTransaction(originalId:string) {
+ if(!/^\d+$/.test(originalId))throw new Error('Invalid subscription identifier.');
+ let failure:unknown;
+ for(const environment of ['Production','Sandbox'] as const){
+  try{
+   const host=environment==='Production'?'https://api.storekit.itunes.apple.com':'https://api.storekit-sandbox.itunes.apple.com';
+   const response=await fetch(`${host}/inApps/v1/subscriptions/${encodeURIComponent(originalId)}`,{headers:{Authorization:`Bearer ${await appStoreToken()}`}});
+   if(!response.ok)throw new Error('Unable to refresh App Store subscription.');
+   const body=await response.json();
+   const transactions:AppleTransaction[]=(body.data||[]).flatMap((group:any)=>(group.lastTransactions||[]).map((entry:any)=>decodePayload<AppleTransaction>(entry.signedTransactionInfo)));
+   const current=transactions.filter(t=>t.originalTransactionId===originalId&&t.productId===APPLE_MONTHLY_PRODUCT_ID&&t.bundleId===APPLE_BUNDLE_ID&&t.environment===environment).sort((a,b)=>b.purchaseDate-a.purchaseDate)[0];
+   if(!current)throw new Error('No matching App Store subscription.');
+   return current;
+  }catch(error){failure=error;}
+ }
+ throw failure instanceof Error?failure:new Error('Unable to refresh App Store subscription.');
 }
