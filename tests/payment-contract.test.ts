@@ -15,7 +15,8 @@ test('iOS digital subscription uses StoreKit and has no Stripe checkout path',()
  assert.match(purchaseScreen,/com\.jaredlederman\.tefillinchallenge\.monthly_contribution/);
  assert.match(purchaseScreen,/appAccountToken/);
  assert.match(purchaseScreen,/subscriptionPriceLabel\(product\)/);
- assert.doesNotMatch(purchaseScreen,/\$[12]\.(80|16|19|29)/);
+ // A clearly labeled charity target is distinct from the StoreKit price.
+ assert.doesNotMatch(purchaseScreen.replace(/Target: \$1\.80 per member each month\.|The \$1\.80 amount is a target, not a guaranteed donation\./g,''),/\$[12]\.(80|16|19|29)/);
  assert.match(billing,/body\.action==='apple-purchase'/);
  assert.match(appleVerifier,/api\.storekit\.itunes\.apple\.com/);
  assert.match(appleVerifier,/transaction\.appAccountToken\?\.toLowerCase\(\)!==expectedAccountToken\.toLowerCase\(\)/);

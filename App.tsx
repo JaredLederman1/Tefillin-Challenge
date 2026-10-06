@@ -122,6 +122,9 @@ function AppContent() {
   const [sheet, setSheet] = useState<'photo' | 'subscription' | 'auth' | 'rules' | 'delete-account' | 'post-menu' | 'reports' | 'community' | 'community-create' | 'community-join' | null>(null);
   const [editingProfileField,setEditingProfileField]=useState<'name'|'birthday'|'school'|'phone'|null>(null);
   const [profileEditValue,setProfileEditValue]=useState('');
+  const [profileDetailsOpen,setProfileDetailsOpen]=useState(false);
+  const [accountActionsOpen,setAccountActionsOpen]=useState(false);
+  useEffect(()=>{setProfileDetailsOpen(false);setAccountActionsOpen(false);},[user?.id]);
   const [exemptionInfoOpen,setExemptionInfoOpen]=useState(false);
   const [notice, setNotice] = useState('');
   const [busy, setBusy] = useState(false);
@@ -654,7 +657,7 @@ function AppContent() {
       setEditingProfileField(null);
     }catch(error:any){setNotice(error.message||'Could not update your information.');}finally{setBusy(false);}
   };
-  const accountName=memberDetails?.full_name||firstName;
+  const accountName:string=String(memberDetails?.full_name||firstName||'Member');
   const accountBirthday=memberDetails?.birthday ? new Date(`${memberDetails.birthday}T12:00:00`).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'}) : 'Not provided';
   const accountSchool=memberDetails?.school||'Not provided';
   const accountPhone=memberDetails?.phone?formatUsPhone(memberDetails.phone):'Not provided';
@@ -662,25 +665,32 @@ function AppContent() {
   const settingsInfoRow=(label:string,field:'name'|'birthday'|'school'|'phone',value:string)=>editingProfileField===field
     ? <View key={field} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>{label}</Text><TextInput autoFocus accessibilityLabel={`Edit ${label}`} style={s.settingsInlineInput} value={profileEditValue} onChangeText={text=>setProfileEditValue(field==='phone'?formatUsPhone(text):text)} autoCapitalize={field==='name'?'words':'none'} autoCorrect={false} keyboardType={field==='phone'?'phone-pad':'default'} placeholder={field==='birthday'?'MM/DD/YYYY':field==='phone'?'(555) 123-4567':''} placeholderTextColor={C.dim} maxLength={field==='name'?80:field==='phone'?14:field==='school'?120:10} editable={!busy} onSubmitEditing={saveProfileEdit}/><Pressable accessibilityRole="button" accessibilityLabel={`Save ${label}`} disabled={busy} onPress={saveProfileEdit} hitSlop={8}><Icon name="checkmark" size={20} color={C.text}/></Pressable><Pressable accessibilityRole="button" accessibilityLabel={`Cancel editing ${label}`} disabled={busy} onPress={()=>setEditingProfileField(null)} hitSlop={8}><Icon name="close" size={19} color={C.muted}/></Pressable></View>
     : <Pressable key={field} accessibilityRole="button" accessibilityLabel={`Edit ${label}`} onPress={()=>openProfileEditor(field)} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>{label}</Text><Text style={s.settingsInfoValue}>{value}</Text></Pressable>;
-  const accountHome = <View style={s.accountHome}><CharityVote key={user?.id||'demo'} refreshKey={user?.id||'demo'} userId={user?.id||null} autoPrompt={!!user&&onboardingState==='complete'&&paidAccess&&!welcomeReveal&&!welcomePreparing&&!showCover&&mainAssetsReady} /></View>;
+  const accountHome = <View style={s.accountHome}>
+    <View style={s.accountHeader}><Text accessibilityRole="header" style={s.pageTitle}>You</Text><Pressable accessibilityRole="button" accessibilityLabel="Account settings" accessibilityState={{expanded:accountActionsOpen}} onPress={()=>setAccountActionsOpen(value=>!value)} style={s.accountSettingsIcon}><Icon name="options-outline" size={23} color={C.text}/></Pressable></View>
+    <View style={s.accountIdentity}><View style={s.accountInitials}><Text style={s.accountInitialsText}>{accountName.trim().split(/\s+/).slice(0,2).map(part=>part[0]).join('').toUpperCase()}</Text></View><Text style={s.accountNameText}>{accountName}</Text></View>
+  </View>;
   const settingsScreen = <View style={s.settingsPage}>
     <View style={s.settingsSection}>
-      <Text style={s.settingsSectionTitle}>Account Information</Text>
+      <Pressable accessibilityRole="button" accessibilityLabel="Personal information" accessibilityState={{expanded:profileDetailsOpen}} onPress={()=>setProfileDetailsOpen(value=>!value)} style={s.settingsAction}><Icon name="person-outline" size={19} color={C.text}/><Text style={s.settingsActionText}>Personal information</Text><Icon name={profileDetailsOpen?'chevron-down':'chevron-forward'} size={19}/></Pressable>
+      {profileDetailsOpen&&<>
       {settingsInfoRow('Name','name',accountName)}
       {settingsInfoRow('Birthday','birthday',accountBirthday)}
       {settingsInfoRow('School','school',accountSchool)}
       {settingsInfoRow('Phone Number','phone',accountPhone)}
-      <Pressable accessibilityRole="button" accessibilityLabel="Community" onPress={()=>setSheet('community')} style={s.settingsInfoRow}><Text style={s.settingsInfoLabel}>Community</Text><Text style={s.settingsInfoValue}>{myCommunityName||'None'}</Text><Icon name="chevron-forward" size={17} color={C.muted}/></Pressable>
+      </>}
+      <Pressable accessibilityRole="button" accessibilityLabel="Community" onPress={()=>myCommunityId?setSheet('community'):openCommunityMembership('join')} style={s.settingsAction}><Icon name="people-outline" size={19} color={C.text}/><Text style={s.settingsActionText}>Community</Text><Text style={s.settingsInfoValue}>{myCommunityName||'Join'}</Text><Icon name="chevron-forward" size={17} color={C.muted}/></Pressable>
     </View>
     <View style={s.settingsSection}>
-      <Pressable accessibilityRole="button" accessibilityLabel="Ratzon Membership" onPress={openSubscription} style={s.settingsAction}><Text style={s.settingsActionText}>Ratzon Membership</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>
+      <Pressable accessibilityRole="button" accessibilityLabel="Ratzon Membership" onPress={openSubscription} style={s.settingsAction}><Icon name="checkmark-circle-outline" size={19} color={C.text}/><Text style={s.settingsActionText}>Membership</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>
+    </View>
+    {accountActionsOpen&&<><View style={s.settingsSection}>
       <Pressable accessibilityRole="button" accessibilityLabel="Rules and privacy" onPress={()=>setSheet('rules')} style={s.settingsAction}><Text style={s.settingsActionText}>Rules & privacy</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable>
       {isAdmin&&<Pressable accessibilityRole="button" accessibilityLabel="Reported posts" disabled={busy} onPress={loadReports} style={s.settingsAction}><Text style={s.settingsActionText}>Reported posts</Text><Icon name="shield-checkmark-outline" size={19} color={C.muted}/></Pressable>}
     </View>
     <View style={s.settingsSection}>
       <Pressable accessibilityRole="link" accessibilityLabel="Contact Jared at Ratzon" onPress={()=>Linking.openURL('mailto:jared@ratzonapp.com').catch(()=>setNotice('Email jared@ratzonapp.com'))} style={s.settingsAction}><Text style={s.settingsActionText}>Contact</Text><Text style={s.settingsInfoValue}>jared@ratzonapp.com</Text></Pressable>
       {isDemo?<><Pressable accessibilityRole="button" onPress={()=>openAuth(true)} style={s.settingsAction}><Text style={s.settingsActionText}>Create account</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable><Pressable accessibilityRole="button" onPress={()=>setEntered(false)} style={s.settingsAction}><Text style={s.settingsActionText}>Back to welcome</Text><Icon name="chevron-forward" size={19} color={C.muted}/></Pressable><Pressable accessibilityRole="button" onPress={()=>{setDemo(initialDemo());setNotice('Demo reset.');}} style={s.settingsAction}><Text style={s.settingsActionText}>Reset demo</Text><Icon name="refresh-outline" size={19} color={C.muted}/></Pressable></>:<><Pressable accessibilityRole="button" onPress={()=>{setNotice('');setSheet('delete-account');}} style={s.settingsAction}><Text style={[s.settingsActionText,{color:'#B42318'}]}>Delete account</Text><Icon name="trash-outline" size={19} color="#B42318"/></Pressable><Pressable accessibilityRole="button" onPress={async()=>{await supabase!.auth.signOut();setEntered(false);}} style={s.settingsAction}><Text style={s.settingsActionText}>Sign out</Text><Icon name="log-out-outline" size={19} color={C.muted}/></Pressable></>}
-    </View>
+    </View></>}
   </View>;
   const profileScreen = user&&(onboardingState==='needed'||returnToOnboarding)? <Onboarding onExit={exitOnboarding} onComplete={finishOnboarding} communities={communities} skipFullName={isAppleIdentity(user)} initialStep={returnToOnboarding?6:0} initialValues={returnToOnboarding?{fullName:memberDetails?.full_name||'',gender:memberDetails?.gender||null,phone:memberDetails?.phone||'',school:memberDetails?.school||'',birthday:birthdayForInput(memberDetails?.birthday),tradition:memberDetails?.tradition||null,ownsTefillin:null,borrowSource:null,communityCode:''}:{fullName:savedIdentityName(user)||identityName,gender:null,phone:'',school:'',birthday:'',tradition:null,ownsTefillin:null,borrowSource:null,communityCode:''}}/> : user&&(onboardingState==='loading'||onboardingState==='error')? <SafeAreaView style={{flex:1,backgroundColor:'#EDF4FF',justifyContent:'center',padding:28}}><StatusBar style="dark"/>{onboardingState==='error'&&<><Text style={{textAlign:'center',color:'#062B60',marginBottom:20}}>Could not load your profile.</Text><Button label="Try again" onPress={async()=>{setOnboardingState('loading');const {data,error}=await supabase!.from('member_onboarding').select('full_name,gender,phone,school,birthday,tradition,completed_at').eq('user_id',user.id).maybeSingle();setMemberDetails(data as MemberDetails|null);setOnboardingState(error?'error':data?'complete':'needed');}}/></>}</SafeAreaView> : null;
   const contributionScreen=user&&onboardingState==='complete'&&!paidAccess ? billingState==='error'?<SafeAreaView style={{flex:1,backgroundColor:'#EDF4FF',justifyContent:'center',padding:28}}><Text style={{color:'#062B60',marginBottom:18}}>{billingError}</Text><Button label="Try Again" onPress={()=>{refreshBilling().catch(()=>{});}}/></SafeAreaView>:<PageTransition fadeOnly duration={360}><ContributionSetup appAccountToken={user.id} onPurchase={confirmAppleContribution} onRefresh={async()=>{await refreshBilling();}} onSkip={__DEV__?()=>setPaymentTestBypass(true):undefined} onBack={()=>setReturnToOnboarding(true)} onStartOver={restartSignup}/></PageTransition>:null;
@@ -698,11 +708,11 @@ function AppContent() {
       <View style={{flex:1}}>
         <Animated.View accessibilityElementsHidden={tab!=='Today'} importantForAccessibility={tab==='Today'?'auto':'no-hide-descendants'} pointerEvents={tab==='Today'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Today'),{zIndex:tab==='Today'?1:0}]}><View style={[s.topbar,{justifyContent:'center'}]} onLayout={()=>{if(welcomeReveal)setHomeLaidOut(true);}}><Text accessibilityRole="header" numberOfLines={1} adjustsFontSizeToFit minimumFontScale={.75} style={[s.pageTitle,{textAlign:'center',transform:[{translateY:30}]}]}>{new Date(`${today}T12:00:00`).toLocaleDateString('en-US',{month:'long',day:'numeric',year:'numeric'})}</Text></View><View style={[s.content,{flex:1}]}>{todayScreen}</View></Animated.View>
         <Animated.View accessibilityElementsHidden={tab!=='Community'} importantForAccessibility={tab==='Community'?'auto':'no-hide-descendants'} pointerEvents={tab==='Community'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Community'),{zIndex:tab==='Community'?1:0}]}><ScrollView removeClippedSubviews={false} contentContainerStyle={s.content} showsVerticalScrollIndicator={false}>{communityScreen}</ScrollView>{communityView==='mine'&&myCommunityId&&<Pressable accessibilityRole="button" accessibilityLabel="Show community invite code" disabled={busy} onPress={showCommunityInviteCode} style={({pressed})=>[s.floatingInviteButton,{opacity:busy?.5:pressed?.75:1}]}><Text style={s.floatingInviteText}>+</Text></Pressable>}</Animated.View>
-        <Animated.View accessibilityElementsHidden={tab!=='Account'} importantForAccessibility={tab==='Account'?'auto':'no-hide-descendants'} pointerEvents={tab==='Account'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Account'),{zIndex:tab==='Account'?1:0}]}><ScrollView style={{flex:1}} contentContainerStyle={[s.content,{paddingTop:18,paddingBottom:22}]} bounces={false} alwaysBounceVertical={false} overScrollMode="never" contentInsetAdjustmentBehavior="never" automaticallyAdjustKeyboardInsets={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{accountHome}{settingsScreen}</ScrollView></Animated.View>
+        <Animated.View accessibilityElementsHidden={tab!=='Account'} importantForAccessibility={tab==='Account'?'auto':'no-hide-descendants'} pointerEvents={tab==='Account'?'auto':'none'} style={[s.tabLayer,tabSlideStyle('Account'),{zIndex:tab==='Account'?1:0,backgroundColor:'#FAFCFF'}]}><ScrollView style={{flex:1}} contentContainerStyle={[s.content,{paddingTop:18,paddingBottom:22}]} bounces={false} alwaysBounceVertical={false} overScrollMode="never" contentInsetAdjustmentBehavior="never" automaticallyAdjustKeyboardInsets={false} keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false}>{accountHome}{settingsScreen}</ScrollView></Animated.View>
       </View>
-      <SafeAreaView edges={['bottom']} onLayout={event=>setNavigationHeight(event.nativeEvent.layout.height)} style={s.bottomBar}><View style={[s.row,{justifyContent:'space-around',alignItems:'center'}]}>{tabs.map(item=><Pressable key={item.name} accessibilityRole="tab" accessibilityLabel={item.name} accessibilityState={{selected:tab===item.name}} onPress={()=>selectTab(item.name)} style={s.bottomTab}>
-        <Icon name={item.icon} size={30} color={tab===item.name?C.gold:C.dim}/>
-        <Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:11,color:tab===item.name?C.gold:C.muted,marginTop:4,fontWeight:'600'}}>{item.name}</Text>
+      <SafeAreaView edges={['bottom']} onLayout={event=>setNavigationHeight(event.nativeEvent.layout.height)} style={s.bottomBar}><View style={[s.row,{justifyContent:'space-around',alignItems:'center'}]}>{tabs.map(item=><Pressable key={item.name} accessibilityRole="tab" accessibilityLabel={item.name==='Account'?'You':item.name} accessibilityState={{selected:tab===item.name}} onPress={()=>selectTab(item.name)} style={s.bottomTab}>
+        {item.name==='Today'?<View style={s.todayNavigationMark}><Image source={require('./assets/media/logo-trimmed.png')} resizeMode="contain" style={{width:30,height:34,tintColor:'#FFFFFF'}}/></View>:<Icon name={item.icon} size={30} color={tab===item.name?C.gold:C.dim}/>}
+        <Text style={{includeFontPadding:false,textAlignVertical:'center',fontSize:11,color:tab===item.name?C.gold:C.muted,marginTop:4,fontWeight:'600'}}>{item.name==='Account'?'You':item.name}</Text>
       </Pressable>)}</View></SafeAreaView>
     </>}
     </View>
@@ -729,7 +739,7 @@ function AppContent() {
     {sheet==='rules'&&<>{[{body:'Privacy: Ratzon collects the information you provide for your account—name, phone number, school, birthday, tradition, optional community membership, and wrap photos and captions. We use it to operate your account, manage subscriptions and charity votes, and provide support. Shared wrap posts appear in the Global feed for signed-in members. If you join a community, its designated admins can view your profile, complete wrap history, captions, and photos, including unshared check-ins, for challenge administration and support.'},{body:'Payments are processed by Apple through the App Store. Ratzon does not receive or store your card number. We retain records required for payment, fraud prevention, tax, or legal obligations; other account data, including shared posts and stored photos, is deleted when you delete your account.'},{body:'Community safety: you can report a post or block its author from the post options menu. Blocking hides that person’s posts from your feeds. Ratzon reviews reports and can remove content or restrict an account. Contact jared@ratzonapp.com for privacy, safety, or account concerns.'},{body:'Rules: you must be at least 13. Post only a new photo you have the right to share. Do not post unlawful, abusive, sexually explicit, threatening, or deceptive content. Shabbat and exempt Jewish holidays do not require a check-in.'},{body:'Account deletion: Settings includes Delete account. It removes your profile, onboarding details, posts, and stored photos. Manage or cancel any recurring App Store subscription in your Apple subscriptions. Payment records required by law may be retained; historical financial obligations or disputes may need support review.'}].map((item,index)=><View key={index} style={{marginBottom:23}}><Text style={s.body}>{item.body}</Text></View>)}<Pressable accessibilityRole="link" onPress={()=>Linking.openURL(PRIVACY_POLICY_URL).catch(()=>setNotice('Could not open the privacy policy.'))}><Text style={[s.textLink,{textAlign:'center'}]}>View full privacy policy</Text></Pressable><Pressable accessibilityRole="link" onPress={()=>Linking.openURL(APPLE_EULA_URL).catch(()=>setNotice('Could not open the Terms of Use.'))}><Text style={[s.textLink,{textAlign:'center',marginTop:20}]}>Terms of Use (EULA)</Text></Pressable></>}
     </ScrollView></Animated.View>{notice&&<View accessibilityRole="alert" style={[s.modalToast,{backgroundColor:C.card,borderColor:C.line}]}><Text style={[s.body,{color:C.text}]}>{notice}</Text></View>}</KeyboardAvoidingView></Modal>
     {!!notice&&!sheet&&<Pressable onPress={()=>setNotice('')} accessibilityRole="alert" style={[s.toast,{bottom:showCover?30:100,left:20,right:20,backgroundColor:C.card,borderColor:C.line}]}><Icon name="information-circle-outline" color={C.gold}/><Text style={[s.body,{flex:1,color:C.text}]}>{notice}</Text><Icon name="close" size={17}/></Pressable>}
-  </SafeAreaView>{!showCover&&<Animated.View pointerEvents={mainAssetsReady?'none':'auto'} style={[StyleSheet.absoluteFill,{backgroundColor:C.bg,opacity:readinessCover}]}/>}</View>}</View>{<WelcomeReveal visible={welcomeReveal} preparing={welcomePreparing} ready={onboardingState==='complete'&&homeLaidOut&&mainAssetsReady} onComplete={()=>{setWelcomePreparing(false);setWelcomeReveal(false);}}/>}</>;
+  </SafeAreaView>{!showCover&&<Animated.View pointerEvents={mainAssetsReady?'none':'auto'} style={[StyleSheet.absoluteFill,{backgroundColor:C.bg,opacity:readinessCover}]}/>}</View>}</View><CharityVote key={user?.id||'demo'} refreshKey={user?.id||'demo'} userId={user?.id||null} autoPrompt={!!user&&onboardingState==='complete'&&paidAccess&&!welcomeReveal&&!welcomePreparing&&!showCover&&mainAssetsReady&&!sheet}/>{<WelcomeReveal visible={welcomeReveal} preparing={welcomePreparing} ready={onboardingState==='complete'&&homeLaidOut&&mainAssetsReady} onComplete={()=>{setWelcomePreparing(false);setWelcomeReveal(false);}}/>}</>;
 }
 export default function App() { return <SafeAreaProvider><AppContent/></SafeAreaProvider>; }
 let s = makeStyles();
@@ -797,7 +807,14 @@ function makeStyles() { const base = StyleSheet.create({
   communityLike:{flexDirection:'row',alignItems:'center',gap:8,alignSelf:'flex-start',marginTop:14,paddingVertical:3},
   communityLikes:{includeFontPadding:false,textAlignVertical:'center',fontSize:18,fontWeight:'600',color:C.text},
   communityEmpty:{borderRadius:22,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:35},
-  accountHome:{gap:18,paddingBottom:18},
+  accountHome:{gap:18,paddingBottom:30},
+  todayNavigationMark:{width:56,height:56,borderRadius:28,backgroundColor:C.text,borderWidth:5,borderColor:C.card,alignItems:'center',justifyContent:'center',marginTop:-22},
+  accountHeader:{flexDirection:'row',alignItems:'center',justifyContent:'space-between',minHeight:56},
+  accountSettingsIcon:{width:44,height:44,alignItems:'center',justifyContent:'center'},
+  accountIdentity:{flexDirection:'row',alignItems:'center',gap:14,paddingVertical:12},
+  accountInitials:{width:46,height:46,borderRadius:23,backgroundColor:C.raised,alignItems:'center',justifyContent:'center'},
+  accountInitialsText:{fontSize:17,fontWeight:'500',color:C.text,includeFontPadding:false},
+  accountNameText:{fontSize:20,fontWeight:'500',color:C.text,flex:1,includeFontPadding:false},
   accountName:{includeFontPadding:false,textAlignVertical:'center',fontSize:30,lineHeight:37,fontWeight:'700',letterSpacing:-.7,color:C.text,textAlign:'center'},
   accountWallet:{borderRadius:24,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',padding:25,alignItems:'center'},
   walletLabelRow:{flexDirection:'row',alignItems:'center',gap:5},
@@ -812,19 +829,19 @@ function makeStyles() { const base = StyleSheet.create({
   accountSettings:{minHeight:58,borderRadius:16,borderWidth:1.5,borderColor:C.text,backgroundColor:'#F8FBFFEE',paddingHorizontal:19,flexDirection:'row',alignItems:'center',gap:12},
   accountSettingsText:{includeFontPadding:false,textAlignVertical:'center',fontSize:16,fontWeight:'700',color:C.text,flex:1},
   settingsBack:{width:35,height:35,alignItems:'center',justifyContent:'center',marginRight:5},
-  settingsPage:{gap:12,paddingTop:0,paddingBottom:0},
+  settingsPage:{gap:0,paddingTop:0,paddingBottom:0},
   cancelRenewal:{alignSelf:'center',minHeight:36,justifyContent:'center',marginTop:8,paddingHorizontal:12},
   cancelRenewalText:{includeFontPadding:false,textAlignVertical:'center',fontSize:13,fontWeight:'600',color:C.muted,textDecorationLine:'underline'},
   stripeFeeOption:{flexDirection:'row',alignItems:'flex-start',gap:10,marginTop:16},
   stripeFeeTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'700',color:C.text,marginBottom:2},
-  settingsSection:{borderWidth:1,borderColor:C.line,borderRadius:18,backgroundColor:C.card,overflow:'hidden'},
+  settingsSection:{overflow:'hidden'},
   settingsSectionTitle:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'700',color:C.text,paddingHorizontal:18,paddingTop:18,paddingBottom:8},
-  settingsInfoRow:{minHeight:55,paddingHorizontal:18,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:18,borderTopWidth:1,borderTopColor:C.line},
+  settingsInfoRow:{minHeight:55,paddingHorizontal:4,flexDirection:'row',alignItems:'center',justifyContent:'space-between',gap:18,borderBottomWidth:1,borderBottomColor:C.line},
   settingsInfoLabel:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,color:C.muted},
   settingsInfoValue:{includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'600',color:C.text,textAlign:'right',flexShrink:1},
   settingsInlineInput:{flex:1,minWidth:0,includeFontPadding:false,textAlignVertical:'center',fontSize:14,fontWeight:'600',color:C.text,textAlign:'right',paddingVertical:4},
-  settingsAction:{minHeight:57,paddingHorizontal:18,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1,borderBottomColor:C.line},
-  settingsActionText:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'600',color:C.text,flex:1},
+  settingsAction:{minHeight:57,paddingHorizontal:0,flexDirection:'row',alignItems:'center',gap:12,borderBottomWidth:1,borderBottomColor:C.line},
+  settingsActionText:{includeFontPadding:false,textAlignVertical:'center',fontSize:15,fontWeight:'400',color:C.text,flex:1},
   walletActivityWindow:{minHeight:100,justifyContent:'center'},
   emptyActivity:{minHeight:72,alignItems:'center',justifyContent:'center'},
   todayRestNotice:{...base.todayRestNotice,borderWidth:1,borderColor:C.text,marginBottom:0},
