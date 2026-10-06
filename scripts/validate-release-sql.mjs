@@ -35,8 +35,36 @@ assert.equal((await db.query('select access_expires_at::text expiry from billing
 await assert.rejects(db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000002']),/another account/);
 await db.exec(`set request.jwt.claim.sub='00000000-0000-0000-0000-000000000001';`);
 let status=(await db.query('select charity_vote_status() value')).rows[0].value;
-assert.equal(status.eligible,true);assert.equal(status.candidates.length,3);
+assert.equal(status.subscriptionEligible,true);assert.equal(status.completionEligible,false);assert.equal(status.eligible,false);assert.equal(status.candidates.length,3);
+assert.equal(status.completedDays,0);assert.equal(status.missingDays,status.requiredDays);assert.equal(status.budgetCents,null);assert.equal(status.subscriberCount,null);
 const candidate=status.candidates[1].id;
+await assert.rejects(db.query('select cast_charity_vote($1)',[candidate]),/Complete every required/);
+await db.query(`insert into checkins(user_id,checkin_date,photo_path,review_status)
+ select '00000000-0000-0000-0000-000000000001',d::date,'qualification:'||d::date,'approved'
+ from generate_series($1::date::timestamp,$2::date::timestamp-interval '1 day',interval '1 day') d where is_required_wrap_day(d::date)`,[status.qualificationMonth,status.month]);
+await db.exec(`update checkins set review_status='pending' where checkin_date=(select min(checkin_date) from checkins where user_id='00000000-0000-0000-0000-000000000001') and user_id='00000000-0000-0000-0000-000000000001'`);
+status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.pendingReviewDays,1);assert.equal(status.missingDays,0);assert.equal(status.eligible,false);
+await assert.rejects(db.query('select cast_charity_vote($1)',[candidate]),/awaiting approval/);
+await db.exec(`update checkins set review_status='approved' where user_id='00000000-0000-0000-0000-000000000001'`);
+status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.completionEligible,true);assert.equal(status.eligible,true);assert.equal(status.completedDays,status.requiredDays);
+const nextVotingMonth=(await db.query(`select ($1::date+interval '1 month')::date::text as month`,[status.month])).rows[0].month;
+await db.query(`insert into checkins(user_id,checkin_date,photo_path,review_status)
+ select '00000000-0000-0000-0000-000000000001',d::date,'future-qualification:'||d::date,'approved'
+ from generate_series($1::date::timestamp,$2::date::timestamp-interval '1 day',interval '1 day') d where is_required_wrap_day(d::date)`,[status.month,nextVotingMonth]);
+const future=(await db.query(`select charity_vote_completion('00000000-0000-0000-0000-000000000001',$1) value`,[nextVotingMonth])).rows[0].value;
+assert.equal(future.qualificationMonthEnded,false);assert.equal(future.completionEligible,false);
+// Even forged future approved rows never count until their local dates arrive.
+const currentApproved=(await db.query(`select count(*)::integer n from checkins where user_id='00000000-0000-0000-0000-000000000001' and checkin_date>=$1 and checkin_date<$2 and checkin_date<=(now() at time zone 'America/New_York')::date`,[status.month,nextVotingMonth])).rows[0].n;
+assert.equal(future.completedDays,currentApproved);
+
+// Optional dates are not needed and cannot substitute for one rejected required day.
+await db.exec(`update checkins set review_status='rejected' where checkin_date=(select min(checkin_date) from checkins where user_id='00000000-0000-0000-0000-000000000001') and user_id='00000000-0000-0000-0000-000000000001'`);
+status=(await db.query('select charity_vote_status() value')).rows[0].value;
+assert.equal(status.missingDays,1);assert.equal(status.completionEligible,false);
+await db.exec(`update checkins set review_status='approved' where user_id='00000000-0000-0000-0000-000000000001'`);
+
 await db.query('select cast_charity_vote($1)',[candidate]);
 await assert.rejects(db.query('select cast_charity_vote($1)',[status.candidates[0].id]),/already been recorded/);
 status=(await db.query('select charity_vote_status() value')).rows[0].value;
@@ -52,12 +80,14 @@ assert.equal(status.reports[0].donationCents,180);
 await db.exec('set role authenticated');
 await assert.rejects(db.query(`select close_charity_vote_round($1)`,[status.month]),/permission denied/);
 await assert.rejects(db.query(`select * from charity_votes`),/permission denied/);
+await assert.rejects(db.query(`select charity_vote_completion('00000000-0000-0000-0000-000000000002',$1)`,[status.month]),/permission denied/);
 await assert.rejects(db.query(`select request_donation(null,true,null,null,180)`),/permission denied/);
 await db.exec('reset role');
 await db.exec(`delete from billing_memberships where user_id='00000000-0000-0000-0000-000000000001';delete from profiles where id='00000000-0000-0000-0000-000000000001';`);
 assert.equal((await db.query('select count(*)::integer n from app_subscription_transactions where user_id is null')).rows[0].n,2);
 await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000002']);
 assert.equal((await db.query("select user_id from app_subscription_transactions where transaction_id='100'")).rows[0].user_id,'00000000-0000-0000-0000-000000000002');
+console.log('Completion-gated eligibility, pending review, rejected days and qualified vote passed');
 console.log('Subscription ownership/idempotency, voting eligibility/one vote, closure/winner/report, role privacy and retired actions passed');
 // Due-round finalization is automatic and never touches personal money records.
 const due=(await db.query(`select (date_trunc('month',now() at time zone 'America/New_York')-interval '1 month')::date::text as month`)).rows[0].month;
