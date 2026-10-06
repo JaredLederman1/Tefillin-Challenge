@@ -5,6 +5,8 @@ begin;
 alter table public.member_onboarding drop constraint if exists member_onboarding_full_name_check;
 alter table public.member_onboarding add constraint member_onboarding_full_name_check check(length(trim(full_name)) between 0 and 80);
 alter table public.member_onboarding drop constraint if exists valid_tefillin_access;
+-- Some deployed schemas omitted this historical compatibility column.
+alter table public.member_onboarding add column if not exists tefillin_goal_enabled boolean not null default false;
 update public.member_onboarding set tefillin_goal_enabled=false;
 
 
