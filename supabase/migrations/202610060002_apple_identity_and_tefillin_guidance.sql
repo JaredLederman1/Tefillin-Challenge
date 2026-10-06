@@ -74,4 +74,5 @@ begin
  raise exception 'Tefillin purchasing is no longer available. Contact your nearest Chabad center to arrange tefillin to use.';
 end $$;
 
+revoke all on function public.set_tefillin_goal(boolean) from public,anon,authenticated,service_role;
 commit;

@@ -56,12 +56,12 @@ create or replace function public.settle_net_month(target_month date,mode boolea
 language plpgsql security definer set search_path='' as $$ begin return '{"status":"retired"}'::jsonb; end $$;
 create or replace function public.process_due_settlements() returns void
 language plpgsql security definer set search_path='' as $$ begin return; end $$;
-revoke all on function public.reserve_membership(uuid,boolean,integer),public.reserve_membership(uuid,boolean,integer,boolean),public.request_donation(uuid,boolean,uuid,uuid,bigint),public.reserve_withdrawal(uuid,boolean,bigint,text,uuid),public.set_charity_preference(uuid,boolean),public.set_tefillin_goal(boolean) from public,anon,authenticated,service_role;
 
--- Some deployed environments include an older Apple wallet-credit RPC.
--- Discover its signature so upgrading never leaves a callable legacy route.
+
+-- Deployed environments can lack legacy functions or have additional overloads.
+-- Discover every retirement signature so schema drift cannot leave a callable route.
 do $$ declare legacy record; begin
- for legacy in select p.proname,pg_get_function_identity_arguments(p.oid) arguments from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname='record_apple_purchase' loop
+ for legacy in select p.proname,pg_get_function_identity_arguments(p.oid) arguments from pg_proc p join pg_namespace n on n.oid=p.pronamespace where n.nspname='public' and p.proname in ('record_apple_purchase','reserve_membership','request_donation','reserve_withdrawal','set_charity_preference','set_tefillin_goal') loop
   execute format('revoke all on function public.%I(%s) from public,anon,authenticated,service_role',legacy.proname,legacy.arguments);
  end loop;
 end $$;

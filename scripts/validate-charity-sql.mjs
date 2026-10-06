@@ -40,3 +40,10 @@ await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),no
 assert.equal((await db.query("select user_id from app_subscription_transactions where transaction_id='100'")).rows[0].user_id,'00000000-0000-0000-0000-000000000002');
 console.log('Subscription ownership/idempotency, voting eligibility/one vote, closure/winner/report, role privacy and retired actions passed');
 await db.close();
+// Production can have migration history without all historical routines.
+const drifted=new PGlite();
+const baseline=readFileSync(new URL('../tests/subscription-charity-vote.sql',import.meta.url),'utf8').replace(/^create function (reserve_membership|request_donation|reserve_withdrawal|set_charity_preference|set_tefillin_goal).*\n/gm,'');
+await drifted.exec(baseline);
+await drifted.exec(readFileSync(new URL('../supabase/migrations/202610060001_subscription_charity_vote.sql',import.meta.url),'utf8'));
+console.log('Migration also applies with all retired historical routines absent');
+await drifted.close();
