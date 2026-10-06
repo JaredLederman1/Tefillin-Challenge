@@ -5,7 +5,7 @@ export type MemberDetails = {
  full_name:string; gender:'man'|'woman'|null; phone:string|null; school:string|null; birthday:string|null;
  tradition:'ashkenazi'|'sephardic'; tefillin_goal_enabled:boolean;
 };
-export function onboardingSteps() { return ['Full Name','Gender','Phone Number','School','Birthday','Tradition','Do you own tefillin?','Borrowing','Community']; }
+export function onboardingSteps() { return ['Full Name','Phone Number','School','Birthday','Tradition','Do you own tefillin?','Community']; }
 export function ageOnDate(birthday:string|null|undefined,today:string):number|null {
  if(!birthday||!/^\d{4}-\d{2}-\d{2}$/.test(birthday))return null;
  const [year,month,day]=birthday.split('-').map(Number);
@@ -17,10 +17,6 @@ export function minimumSignupBirthday(today=new Date()) {
  const cutoff=new Date(today.getFullYear()-13,today.getMonth(),today.getDate());
  if(cutoff.getMonth()!==today.getMonth())cutoff.setDate(0);
  return `${String(cutoff.getMonth()+1).padStart(2,'0')}/${String(cutoff.getDate()).padStart(2,'0')}/${cutoff.getFullYear()}`;
-}
-export function tefillinGoalProgress(balanceCents:number,targetCents=35000) {
- const available=Math.max(0,Number.isFinite(balanceCents)?balanceCents:0);
- return {available,remaining:Math.max(0,targetCents-available),percent:Math.min(100,available/targetCents*100)};
 }
 export function phoneDigits(value:string) { return value.replace(/\D/g,'').slice(0,10); }
 export function formatUsPhone(value:string) {

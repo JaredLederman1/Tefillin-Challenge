@@ -32,3 +32,21 @@ test('Apple verifier sends required bundle claim and validates purchase ownershi
   assert.ok(calls.every(url=>url.includes('storekit-sandbox')));
  }finally{runtime.Deno=originalDeno;globalThis.fetch=originalFetch;}
 });
+
+test('subscription refresh selects the newest verified renewal and rejects unrelated products',async()=>{
+ const {privateKey}=generateKeyPairSync('ec',{namedCurve:'prime256v1'});
+ const env={APPLE_IAP_ISSUER_ID:'test-issuer',APPLE_IAP_KEY_ID:'test-key',APPLE_IAP_PRIVATE_KEY_BASE64:Buffer.from(privateKey.export({type:'pkcs8',format:'pem'})).toString('base64')};
+ const runtime=globalThis as any,originalDeno=runtime.Deno,originalFetch=globalThis.fetch;
+ runtime.Deno={env:{get:(name:string)=>env[name as keyof typeof env]}};
+ const transaction={transactionId:'2000000000000002',originalTransactionId:'2000000000000001',productId:'com.jaredlederman.tefillinchallenge.monthly_contribution',bundleId:'com.jaredlederman.tefillinchallenge',environment:'Production',purchaseDate:Date.now(),expiresDate:Date.now()+3600000};
+ const signed=(t:unknown)=>`header.${Buffer.from(JSON.stringify(t)).toString('base64url')}.signature`;
+ globalThis.fetch=async()=>Response.json({data:[{lastTransactions:[{signedTransactionInfo:signed({...transaction,transactionId:'2000000000000001',purchaseDate:0,expiresDate:1})},{signedTransactionInfo:signed(transaction)}]}]});
+ try{
+  const source=readFileSync(new URL('../supabase/functions/_shared/apple.ts',import.meta.url),'utf8');
+  const js=ts.transpile(source,{target:ts.ScriptTarget.ES2022,module:ts.ModuleKind.ES2022});
+  const {getAppleSubscriptionTransaction}=await import('data:text/javascript;base64,'+Buffer.from(js).toString('base64'));
+  assert.equal((await getAppleSubscriptionTransaction(transaction.originalTransactionId)).transactionId,transaction.transactionId);
+  transaction.productId='unrelated';
+  await assert.rejects(()=>getAppleSubscriptionTransaction(transaction.originalTransactionId),/No matching/);
+ }finally{runtime.Deno=originalDeno;globalThis.fetch=originalFetch;}
+});

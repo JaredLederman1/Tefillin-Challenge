@@ -11,11 +11,11 @@ export function chargeWithStripeFeeCovered(contributionCents:number) {
 export function stripeFeeCents(chargeCents:number) {
   return Math.ceil(chargeCents*STRIPE_PERCENT_FEE)+STRIPE_FIXED_FEE_CENTS;
 }
-export function hasPaidAccess(membership:{status:string}|null,months:string[],today:string) {
-  const month=today.slice(0,7)+'-01';
-  // Stripe marks a subscription active only after the initial payment succeeds.
-  // Webhook settlement details can arrive moments later and must not block entry.
-  return membership?.status==='active' || months.some(value=>value>=month);
+export function hasPaidAccess(membership:{status:string;access_expires_at?:string|null;subscription_id?:string|null}|null,_legacyMonths:string[]=[],_today?:string,now=Date.now()) {
+  if(membership?.status!=='active')return false;
+  const expires=Date.parse(membership.access_expires_at||'');
+  // Only a server-verified unexpired entitlement grants App Store access.
+  return Number.isFinite(expires)&&expires>now;
 }
 export function sliderCents(x:number,width:number) {
   const values=[180,...Array.from({length:17},(_,index)=>(index+2)*100)];

@@ -1,9 +1,8 @@
 import { supabase } from './supabase';
-import { FINANCIAL_FEATURES_ENABLED } from './features';
 
 export const paymentsLive = true;
 export async function billingAction(action: string, body: Record<string, unknown> = {}) {
-  if(!FINANCIAL_FEATURES_ENABLED&&['subscribe','donate','withdraw','onboard'].includes(action))throw new Error('Contributions and donations are currently unavailable.');
+  if(['subscribe','donate','withdraw','onboard'].includes(action))throw new Error('Personal contribution pools and donation balances have been retired.');
   if (!supabase) throw new Error('Sign in required.');
   const result = await supabase.functions.invoke('ratzon-billing', { body: { action, ...body, livemode: paymentsLive } });
   if (result.error) {
