@@ -30,6 +30,7 @@
     .brand-copy{position:absolute;top:calc(50% + min(calc((100vw - 64px)*.168453),107.81px) + 36px);left:0;right:0;margin:0;text-align:center;line-height:1.5}
     .slogan{margin:0;font-size:clamp(18px,2.5vw,24px);font-weight:500;letter-spacing:.02em}
     h1{margin:24px 0 0;font-size:16px;font-weight:400;letter-spacing:.02em}
+    .privacy{position:absolute;bottom:28px;left:0;right:0;text-align:center;font-size:14px}.privacy a{color:#062b60}
     @media(max-height:420px){.brand{--w:min(calc(100vw - 64px),400px)}.brand-copy{top:calc(50% + min(calc((100vw - 64px)*.168453),67.39px) + 24px)}}
     @media(prefers-reduced-motion:reduce){.brand-r,.ready .brand-r{animation:none;left:0}.tail,.ready .tail{animation:none;width:270.37%}}
   </style>
@@ -39,6 +40,7 @@
   <main>
     <div class="brand" role="img" aria-label="Ratzon"><div class="brand-r"><img src="./media/logo.png" alt="" width="795" height="992"><div class="tail"><img src="./media/word-mark-without-r.png" alt="" width="1761" height="459"></div></div></div>
     <div class="brand-copy"><p class="slogan">Live With Intention</p><h1>Coming soon</h1></div>
+    <p class="privacy"><a href="./support.html">Support</a> · <a href="./privacy.html">Privacy Policy</a> · <a href="./terms.html">Service Terms</a> · <a href="https://www.apple.com/legal/internet-services/itunes/dev/stdeula/">Terms of Use</a></p>
   </main>
   <script>Promise.all(Array.from(document.querySelectorAll('.brand img'),img=>img.decode().catch(()=>{}))).then(()=>document.documentElement.classList.add('ready'));</script>
 </body>
