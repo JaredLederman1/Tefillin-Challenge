@@ -12,6 +12,7 @@
 - Main app headers show a left-aligned bold page title. Today shows the full date including year, horizontally centered. The transparent R logo belongs inside the raised center Today navigation button, replacing the sun icon. Do not duplicate the logo or title in the header.
 
 - Vertically center labels, titles, dates, captions, icons, and selection indicators within their rows and controls. Use balanced vertical spacing and avoid font padding that makes text look off-center. Retain the specified horizontal alignment and page layout.
+- Birthday month, day, and year wheels provide a subtle selection haptic when user scrolling changes the selected increment. Avoid feedback for initial positioning or automatic date corrections.
 
 - Bottom navigation has exactly three tabs: Community, Today (raised center R), and You. Monthly charity voting and community impact live inside You; there are no personal monetary wallets or separate Challenge or Wallet tabs.
 
