@@ -65,10 +65,10 @@ export function CharityVote({refreshKey=0,userId,autoPrompt=false}:{refreshKey?:
   <Text style={s.heading}>Monthly charity allocation</Text>
   {!visible&&errorNotice}
   {!status&&!error?<ActivityIndicator/>:null}
-  {budget?<Text style={s.text}>Ratzon’s company allocation total: {budget}</Text>:null}
+  {status?<Text style={s.text}>{budget?`Recorded funds available for this allocation: ${budget}`:'Donation total awaiting reconciliation.'}</Text>:null}
   {status?<>
    {status.voteCauseId?<Text style={s.text}>Your allocation vote has been recorded.</Text>:!status.qualificationMonthEnded?<Text style={s.text}>Allocation opens after {qualificationLabel} ends.</Text>:status.pendingReviewDays>0?<Text style={s.text}>{status.pendingReviewDays} required {status.pendingReviewDays===1?'day is':'days are'} awaiting review for {qualificationLabel}.</Text>:!status.completionEligible?<Text style={s.text}>Complete every required day in a month to qualify for the following month’s allocation vote.</Text>:!status.subscriptionEligible?<Text style={s.text}>An active subscription is required to vote.</Text>:null}
-   <Pressable accessibilityRole="button" onPress={()=>setVisible(true)} style={s.button}><Text style={s.buttonText}>{status.voteCauseId?'View allocation vote':status.eligible?'Vote on charity allocation':'View charity allocation'}</Text></Pressable>
+   <Pressable accessibilityRole="button" onPress={()=>{setVisible(true);void refresh();}} style={s.button}><Text style={s.buttonText}>{status.voteCauseId?'View allocation vote':status.eligible?'Vote on charity allocation':'View charity allocation'}</Text></Pressable>
   </>:null}
   <Text style={s.text}>{companyDonationPolicy}</Text>
   <Text style={s.heading}>Community impact</Text>
@@ -83,8 +83,9 @@ export function CharityVote({refreshKey=0,userId,autoPrompt=false}:{refreshKey?:
     <ScrollView contentContainerStyle={s.modalContent}>
      <Text accessibilityRole="header" style={s.heading}>{eligible?`Congratulations on wrapping every required day in ${qualificationLabel}!`:'Monthly charity allocation'}</Text>
      {eligible?<Text style={s.text}>Choose the charity you want Ratzon to support with its company donation.</Text>:null}
-     {budget?<Text style={s.text}>Ratzon’s company allocation total: {budget}</Text>:null}
+     <Text style={s.text}>{budget?`Recorded funds available for this allocation: ${budget}`:'Donation total awaiting reconciliation.'}</Text>
      {errorNotice}
+     {!status&&!error?<ActivityIndicator/>:null}
      {status?.candidates.length===0?<Text style={s.text}>This month’s candidates are being prepared.</Text>:status?.candidates.map(candidate=>{
       const selected=status.voteCauseId===candidate.id,disabled=busy||!!status.voteCauseId||!status.eligible||status.status!=='open';
       return <View key={candidate.id} style={s.card}>
