@@ -6,7 +6,7 @@ Monthly candidates are initialized on the first authenticated vote-status reques
 
 Operators with Supabase service-role/SQL access can configure future round rows and their candidates. Publish at least one enabled charity, set the next-month cutoff in America/New_York, and use unique positive `tie_rank` values. Do not change candidates or their ordering once the round is visible or has votes. No public client may update candidates, close rounds, alter totals, or publish receipts.
 
-After a month ends, close the round with:
+Voting always stops at midnight New York time when the next month starts. Migration `202610060003_finalize_monthly_charity_votes.sql` automatically computes and publishes closed-round recipients during the existing daily cron hook, or immediately when a member refreshes voting after the cutoff. This closes votes only; donation reconciliation and payments remain operator responsibilities. Empty candidate slates are left pending for operator attention. Operators can also close a due round manually with:
 
 ```sql
 select public.close_charity_vote_round('2026-10-01'::date);

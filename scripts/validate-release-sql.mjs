@@ -59,4 +59,26 @@ assert.equal((await db.query('select count(*)::integer n from app_subscription_t
 await db.query(`select record_app_subscription($1,'100','100','Sandbox',now(),now()+interval '1 month')`,['00000000-0000-0000-0000-000000000002']);
 assert.equal((await db.query("select user_id from app_subscription_transactions where transaction_id='100'")).rows[0].user_id,'00000000-0000-0000-0000-000000000002');
 console.log('Subscription ownership/idempotency, voting eligibility/one vote, closure/winner/report, role privacy and retired actions passed');
+// Due-round finalization is automatic and never touches personal money records.
+const due=(await db.query(`select (date_trunc('month',now() at time zone 'America/New_York')-interval '1 month')::date::text as month`)).rows[0].month;
+const older=(await db.query(`select (date_trunc('month',now() at time zone 'America/New_York')-interval '2 months')::date::text as month`)).rows[0].month;
+const empty=(await db.query(`select (date_trunc('month',now() at time zone 'America/New_York')-interval '3 months')::date::text as month`)).rows[0].month;
+const causes=(await db.query(`select id from donation_causes where enabled and livemode order by name limit 2`)).rows;
+await db.query(`insert into charity_vote_rounds(month,closes_at) values($1,now()-interval '1 day'),($2,now()-interval '1 day'),($3,now()-interval '1 day')`,[due,older,empty]);
+for(const month of [due,older])await db.query(`insert into charity_vote_candidates(month,cause_id,tie_rank) values($1,$2,1),($1,$3,2)`,[month,causes[0].id,causes[1].id]);
+await db.query(`insert into charity_votes(month,user_id,cause_id) values($1,'00000000-0000-0000-0000-000000000002',$2)`,[due,causes[1].id]);
+const beforeMoney=(await db.query(`select (select count(*) from ledger)::integer ledger,(select count(*) from enrollments)::integer enrollments,(select count(*) from billing_invoices)::integer invoices`)).rows[0];
+await db.exec('select process_due_settlements();select process_due_settlements();');
+assert.equal((await db.query('select winner_cause_id from charity_vote_rounds where month=$1',[due])).rows[0].winner_cause_id,causes[1].id);
+assert.equal((await db.query('select winner_cause_id from charity_vote_rounds where month=$1',[older])).rows[0].winner_cause_id,causes[0].id);
+assert.equal((await db.query('select status from charity_vote_rounds where month=$1',[empty])).rows[0].status,'open');
+assert.equal((await db.query('select donation_cents from charity_vote_rounds where month=$1',[due])).rows[0].donation_cents,null);
+assert.deepEqual((await db.query(`select (select count(*) from ledger)::integer ledger,(select count(*) from enrollments)::integer enrollments,(select count(*) from billing_invoices)::integer invoices`)).rows[0],beforeMoney);
+await db.query(`update charity_vote_rounds set status='open',winner_cause_id=null where month=$1`,[older]);
+await db.exec('select charity_vote_status();');
+assert.equal((await db.query('select status from charity_vote_rounds where month=$1',[older])).rows[0].status,'closed');
+await db.exec('set role authenticated');
+await assert.rejects(db.query('select process_due_settlements()'),/permission denied/);
+await db.exec('reset role');
+console.log('Automatic due-round closure, zero-vote tie order, refresh closure, empty-slate handling, permissions and untouched money records passed');
 await db.close();
