@@ -31,7 +31,7 @@ Deno.serve(async req=>{
   // cancellation leaves the account intact so it cannot be deleted while a
   // recurring charge might still be active.
   for(const membership of memberships||[]){
-   if(!membership.subscription_id)continue;
+   if(!membership.subscription_id||!membership.subscription_id.startsWith('sub_'))continue;
    const key=Deno.env.get(membership.livemode?'STRIPE_LIVE_SECRET_KEY':'STRIPE_SECRET_KEY');
    if(!key)throw new Error('Could not cancel the recurring contribution. Please contact support.');
    const canceled=await fetch(`https://api.stripe.com/v1/subscriptions/${membership.subscription_id}`,{method:'DELETE',headers:{Authorization:`Bearer ${key}`}});
@@ -50,6 +50,6 @@ Deno.serve(async req=>{
   }
   const {error}=await db.auth.admin.deleteUser(user.id);
   if(error)throw error;
-  return reply({deleted:true});
+  return reply({deleted:true,appStoreSubscriptionMayRemain:(memberships||[]).some(m=>m.subscription_id&&!m.subscription_id.startsWith('sub_'))});
  }catch(error){return reply({error:error instanceof Error?error.message:'Could not delete account. Please try again.'},400);}
 });

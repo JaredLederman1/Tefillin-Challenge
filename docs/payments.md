@@ -1,3 +1,7 @@
+# Historical payment implementation
+
+This document describes the retired contribution-pool model. Do not enable its collection, settlement, donation or tefillin purchase instructions for the subscription-and-charity-voting release. See [current release checklist](app-store-review.md). Preserve historical records and reconcile outstanding commitments separately.
+
 # Ratzon payments
 
 ## Implemented

@@ -5,7 +5,7 @@ import {readFileSync} from 'node:fs';
 test('first onboarding step has a welcome exit without deleting the account',()=>{
  const flow=readFileSync(new URL('../src/OnboardingFlow.tsx',import.meta.url),'utf8');
  const app=readFileSync(new URL('../App.tsx',import.meta.url),'utf8');
- assert.match(flow,/step===0\?'Back to welcome':'Previous step'/);
+ assert.match(flow,/step===firstStep\?'Back to welcome':'Previous step'/);
  assert.match(flow,/await onExit\(\)/);
  assert.doesNotMatch(flow,/disabled=\{step===0\|\|busy\}/);
  const exit=app.slice(app.indexOf('async function exitOnboarding()'),app.indexOf('async function finishOnboarding'));

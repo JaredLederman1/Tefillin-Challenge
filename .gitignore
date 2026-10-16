@@ -48,3 +48,6 @@ yarn-error.*
 # Supabase local CLI state
 supabase/.temp/
 supabase/.branches/
+
+# Local release metadata snapshots (never publish account contact details).
+.release-private/
