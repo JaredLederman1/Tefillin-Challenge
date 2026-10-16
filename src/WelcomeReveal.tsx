@@ -1,5 +1,5 @@
 import React,{useCallback,useEffect,useRef,useState} from 'react';
-import {AccessibilityInfo,Animated,Easing,StyleSheet,useWindowDimensions,View} from 'react-native';
+import {AccessibilityInfo,ActivityIndicator,Animated,Easing,StyleSheet,useWindowDimensions,View} from 'react-native';
 import {WelcomeBrand} from './WelcomeBrand';
 
 /** A single brand reveal followed by a capped loading bar. */
@@ -52,6 +52,7 @@ function LoadingSequence({ready,onComplete}:{ready:boolean;onComplete:()=>void})
     return ()=>animation.stop();
   },[visible,ready,barDone,reduced,content]);
   return <Animated.View pointerEvents={visible?'auto':'none'} accessibilityElementsHidden={!visible} importantForAccessibility={visible?'auto':'no-hide-descendants'} accessibilityViewIsModal={visible} style={[s.screen,{opacity:visible?content:0}]}>
+    {!assetsReady&&<ActivityIndicator size="small" color="#062B60" accessibilityLabel="Loading Ratzon" style={StyleSheet.absoluteFill}/>}
     <View style={[s.content,{opacity:assetsReady?1:0}]}>
       <WelcomeBrand width={Math.min(width-64,384)} active={visible&&started} onReady={onBrandReady} onAnimationComplete={onLogoComplete}/>
       <View accessibilityRole="progressbar" accessibilityLabel="Loading Ratzon" accessibilityValue={{min:0,max:100}} style={s.track}><Animated.View style={[s.fill,{width:loadingProgress.interpolate({inputRange:[0,1],outputRange:['0%','100%']})}]}/></View>

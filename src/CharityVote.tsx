@@ -27,7 +27,7 @@ export function CharityVote({refreshKey=0,userId,autoPrompt=false}:{refreshKey?:
   const monthToken=()=>new Intl.DateTimeFormat('en-US',{year:'numeric',month:'2-digit',day:'2-digit',timeZone:'America/New_York'}).format(new Date());
   let currentMonth=monthToken();
   const subscription=AppState.addEventListener('change',state=>{if(state==='active'){currentMonth=monthToken();void refresh();}});
-  const timer=setInterval(()=>{const nextMonth=monthToken();if(nextMonth!==currentMonth){currentMonth=nextMonth;void refresh();}},60000);
+  const timer=setInterval(()=>{const nextMonth=monthToken();const [month,day,year]=nextMonth.split('/').map(Number);if(nextMonth!==currentMonth||day===new Date(year,month,0).getDate()){currentMonth=nextMonth;void refresh();}},60000);
   return()=>{subscription.remove();clearInterval(timer);};
  },[userId,refresh]);
  useEffect(()=>{
@@ -69,13 +69,13 @@ export function CharityVote({refreshKey=0,userId,autoPrompt=false}:{refreshKey?:
  }
  const budget=companyBudgetLabel(status?.budgetCents);
  const qualificationLabel=status?.qualificationMonth?new Date(`${status.qualificationMonth}T12:00:00`).toLocaleDateString(undefined,{month:'long',year:'numeric'}):'the previous month';
- const eligible=Boolean(status?.eligible===true&&status.completionEligible===true&&status.qualificationMonthEnded===true);
+ const eligible=Boolean(status?.eligible===true&&status.completionEligible===true);
  const errorNotice=error?<View><Text accessibilityRole="alert" style={s.error}>{error}</Text><Pressable accessibilityRole="button" onPress={()=>void refresh()}><Text style={s.link}>Retry</Text></Pressable></View>:null;
  return <Modal visible={visible} transparent animationType="fade" onRequestClose={dismiss}>
    <View style={s.backdrop}><View accessibilityViewIsModal style={s.modal}>
     <Pressable accessibilityRole="button" accessibilityLabel="Close charity allocation" onPress={dismiss} style={s.close}><Text style={s.closeText}>×</Text></Pressable>
     <ScrollView contentContainerStyle={s.modalContent}>
-     <Text accessibilityRole="header" style={s.heading}>{eligible?`Congratulations on wrapping every required day in ${qualificationLabel}!`:'Monthly charity allocation'}</Text>
+     <Text accessibilityRole="header" style={s.heading}>{eligible?`Congratulations on completing your obligated wrap days in ${qualificationLabel}!`:'Monthly charity allocation'}</Text>
      {eligible?<Text style={s.text}>Choose the charity you want Ratzon to support with its company donation.</Text>:null}
      <Text style={s.text}>{budget?`Recorded funds available for this allocation: ${budget}`:'Donation total awaiting reconciliation.'}</Text>
      {errorNotice}

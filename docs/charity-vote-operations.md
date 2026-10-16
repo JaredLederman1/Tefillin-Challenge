@@ -58,3 +58,16 @@ Migration `202610060006_first_day_charity_voting.sql` narrows voting to the firs
 The migration shortens only open deadlines, retains accepted votes, and leaves closed reports intact. New automatic and configured future slates receive day-2 cutoffs. A status refresh outside the voting day finalizes a newly initialized due round immediately; the daily cron remains a fallback. Candidate-order tie/no-vote fallback and company-fund reconciliation remain unchanged. There is no personal balance or new estimated donation promise.
 
 The full SQL checker freezes `pg_catalog.now` only inside its disposable PGlite instance, testing successful voting on October 1 and refusal afterward. It verifies winter and summer UTC offsets, the November DST transition's 25-hour voting day, shortened deadlines, retained votes, unchanged closed history and correct future round deadlines. No production clock function is changed.
+
+
+## Month-end rule — October 16, 2026
+
+Deployed to production on October 16, 2026 in migration 202610160001_month_end_signup_voting (SQL Editor transaction succeeded and migration history recorded). Voting opens on the final New York calendar day and closes at midnight. All obligated wraps through that final day must be approved. The first qualifying period begins on the auth account creation date in the member’s timezone; subsequent periods cover the full month. No required days means no vote. An active subscription and one immutable vote per round remain required. Existing round keys refer to the next month, preserving historical votes. Open future deadlines are shortened to the new cutoff; closed history is preserved.
+
+The popup refreshes after check-in changes and once per minute on the final day, as well as on app foreground. This is an in-app popup, not a push notification.
+
+Validation: scripts/validate-month-end-voting.mjs applies the full migration chain in disposable PGlite and checks signup boundaries, full following months, missing/pending/approved wraps, and New York opening/cutoff.
+
+Migration `202610160002_peer_wrap_confirmation` was deployed in the same transaction. One other signed-in member confirms a shared wrap via `confirm_wrap`; this changes pending to approved. Self-confirmation, blocked relationships, and rejected wraps are refused. Repeat confirmations are idempotent. The table is private; clients use the confirmation RPCs. Existing approved wraps retain their status. The feed replaces likes with Confirm tefillin / Confirmed and confirmation counts.
+
+Validation passed: TypeScript, 52 unit tests, and full-chain PGlite checks including peer confirmation permissions and voting boundaries. Client changes require reloading the current development bundle; this does not create a new native build.

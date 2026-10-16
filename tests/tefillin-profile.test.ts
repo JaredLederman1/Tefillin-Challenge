@@ -4,7 +4,7 @@ import {readFileSync} from 'node:fs';
 import {onboardingSteps,ageOnDate} from '../src/onboarding-data.ts';
 
 test('onboarding collects tefillin ownership without borrowing or religiosity',()=>{
- assert.deepEqual(onboardingSteps(),['Full Name','Phone Number','School','Birthday','Tradition','Do you own tefillin?','Community']);
+ assert.deepEqual(onboardingSteps(),['Confirm your name','Phone Number','University','Birthday','Tradition','Do you own tefillin?','Community']);
 });
 test('age respects birthday boundary and optional birthday',()=>{
  assert.equal(ageOnDate('2005-09-13','2026-09-12'),20);

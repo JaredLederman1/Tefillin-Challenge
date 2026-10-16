@@ -32,3 +32,11 @@ export async function recoveredIdentityName(storage:NameStorage,user:IdentityUse
   const subject=user.identities?.find(identity=>identity.provider==='apple')?.identity_data?.sub;
   return typeof subject==='string'?(await storage.getItem(`ratzon:apple-name:${subject}`))||'':'';
 }
+
+// Prefer a private profile name, then the recovered Apple identity, before a
+// public display name that may still contain the legacy placeholder.
+export function resolvedMemberName(privateName:string|null|undefined,user:IdentityUser|null|undefined,cachedName:string,displayName?:string|null):string {
+ const candidates=[privateName,savedIdentityName(user),cachedName,displayName];
+ for(const name of candidates)if(name?.trim()&&!['member','friend','community member'].includes(name.trim().toLowerCase()))return name.trim();
+ return '';
+}

@@ -5,7 +5,7 @@ export type MemberDetails = {
  full_name:string; gender:'man'|'woman'|null; phone:string|null; school:string|null; birthday:string|null;
  tradition:'ashkenazi'|'sephardic'; tefillin_goal_enabled:boolean;
 };
-export function onboardingSteps() { return ['Full Name','Phone Number','School','Birthday','Tradition','Do you own tefillin?','Community']; }
+export function onboardingSteps() { return ['Confirm your name','Phone Number','University','Birthday','Tradition','Do you own tefillin?','Community']; }
 export function ageOnDate(birthday:string|null|undefined,today:string):number|null {
  if(!birthday||!/^\d{4}-\d{2}-\d{2}$/.test(birthday))return null;
  const [year,month,day]=birthday.split('-').map(Number);

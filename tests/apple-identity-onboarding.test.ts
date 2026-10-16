@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {appleFullName,captureAppleName,recoveredIdentityName,isAppleIdentity,savedIdentityName} from '../src/apple-identity.ts';
+import {appleFullName,captureAppleName,recoveredIdentityName,isAppleIdentity,savedIdentityName,resolvedMemberName} from '../src/apple-identity.ts';
 import {onboardingSteps} from '../src/onboarding-data.ts';
 
 test('Apple one-time full name survives canceled authentication and subsequent missing name',async()=>{
@@ -23,5 +23,12 @@ test('Apple provider detection includes linked identities and does not force a m
 });
 
 test('ownership flows straight to community without a borrowing or purchasing step',()=>{
- assert.deepEqual(onboardingSteps(),['Full Name','Phone Number','School','Birthday','Tradition','Do you own tefillin?','Community']);
+ assert.deepEqual(onboardingSteps(),['Confirm your name','Phone Number','University','Birthday','Tradition','Do you own tefillin?','Community']);
+});
+
+test('recovered Apple names replace legacy Member placeholders without overwriting a chosen name',()=>{
+ assert.equal(resolvedMemberName('',{user_metadata:{full_name:'Jared Lederman'}},'','Member'),'Jared Lederman');
+ assert.equal(resolvedMemberName('Member',{},'Jared Lederman','Member'),'Jared Lederman');
+ assert.equal(resolvedMemberName('Chosen Name',{user_metadata:{name:'Apple Name'}},'Cached Name','Member'),'Chosen Name');
+ assert.equal(resolvedMemberName('',{},'','Member'),'');
 });
